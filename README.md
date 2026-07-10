@@ -1,4 +1,5 @@
 # sing-song-bing-bong
+create music a song with my voice create music beat machine voice synthesizer,best studio digital tracks mix and mastering expert artist nipsey hussle style westoast themed hip hop beats 2 pac style best of thr best music producer ,expert in all intstruments using my voice with on beat in synce vocals rhyme expert good at word play and articulate best music producing studio equipment  using the state of the art vocals with vocal coaches best voices of the best greatest rappers mainly mine
 
 ## Project Brief
 
