@@ -40,21 +40,30 @@ if(SSBB_BUILD_STANDALONE_APP)
     target_sources(SingSongBingBongApp
         PRIVATE
             src/main.cpp
+            src/MainComponent.cpp
+            src/AudioEngine.cpp
+            src/Transport.cpp
+            src/Metronome.cpp
     )
 
     target_include_directories(SingSongBingBongApp
         PRIVATE
             ${CMAKE_CURRENT_BINARY_DIR}/generated
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
 
     target_compile_definitions(SingSongBingBongApp
         PRIVATE
             JUCE_WEB_BROWSER=0
             JUCE_USE_CURL=0
+            JUCE_DISPLAY_SPLASH_SCREEN=0
     )
 
     target_link_libraries(SingSongBingBongApp
         PRIVATE
+            juce::juce_audio_basics
+            juce::juce_audio_devices
+            juce::juce_audio_utils
             juce::juce_gui_extra
             juce::juce_recommended_config_flags
             juce::juce_recommended_lto_flags
@@ -73,4 +82,20 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME ssbb.bootstrap COMMAND ssbb_bootstrap_tests)
+
+    # Transport + Metronome tests: pure C++20 — no JUCE dependency.
+    # Both Transport.cpp and Metronome.cpp carry no JUCE headers.
+    add_executable(ssbb_transport_tests
+        tests/transport_tests.cpp
+        src/Transport.cpp
+        src/Metronome.cpp
+    )
+
+    target_include_directories(ssbb_transport_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_BINARY_DIR}/generated
+    )
+
+    add_test(NAME ssbb.transport COMMAND ssbb_transport_tests)
 endif()

@@ -1,22 +1,28 @@
+// main.cpp — application entry point for Sing Song Bing Bong
+// The AudioEngine is owned by the Application object and outlives the window,
+// ensuring the device manager is cleaned up after the UI is destroyed.
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "BootstrapConfig.h"
+#include "MainComponent.h"
+#include "AudioEngine.h"
 
 namespace
 {
+
 class MainWindow final : public juce::DocumentWindow
 {
 public:
-    MainWindow()
+    explicit MainWindow(ssbb::AudioEngine& engine)
         : juce::DocumentWindow(ssbb::bootstrap::kDisplayName,
                                juce::Desktop::getInstance().getDefaultLookAndFeel()
                                    .findColour(juce::ResizableWindow::backgroundColourId),
                                juce::DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar(true);
-        setResizable(false, false);
-        setContentOwned(new juce::Component(), true);
-        centreWithSize(640, 360);
+        setResizable(true, true);
+        setContentOwned(new ssbb::MainComponent(engine), true);
+        centreWithSize(700, 560);
         setVisible(true);
     }
 
@@ -46,12 +52,18 @@ public:
 
     void initialise(const juce::String&) override
     {
-        mainWindow = std::make_unique<MainWindow>();
+        // Engine must be alive before the window (which starts the timer)
+        // and must outlive the window (which touches the engine in its destructor).
+        engine_     = std::make_unique<ssbb::AudioEngine>();
+        mainWindow_ = std::make_unique<MainWindow>(*engine_);
     }
 
     void shutdown() override
     {
-        mainWindow.reset();
+        // Destroy window first (stops timer, detaches UI from engine),
+        // then tear down the engine (stops device, removes callback).
+        mainWindow_.reset();
+        engine_.reset();
     }
 
     void systemRequestedQuit() override
@@ -60,8 +72,10 @@ public:
     }
 
 private:
-    std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<ssbb::AudioEngine> engine_;
+    std::unique_ptr<MainWindow>        mainWindow_;
 };
+
 } // namespace
 
 START_JUCE_APPLICATION(Application)
