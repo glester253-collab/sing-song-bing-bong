@@ -35,7 +35,11 @@ public:
     {
         return positionInSamples_.load(std::memory_order_relaxed);
     }
-    double getSampleRate() const noexcept { return sampleRate_; }
+    /// Safe to call from any thread (e.g. the message thread for UI display).
+    double getSampleRate() const noexcept
+    {
+        return sampleRate_.load(std::memory_order_relaxed);
+    }
 
     // ---- Pure-math utilities (testable without JUCE) ----
     static double  beatsToSeconds(double beats, double bpm) noexcept;
@@ -53,9 +57,9 @@ private:
     std::atomic<bool>    loopEnabled_        { false };
     std::atomic<int64_t> positionInSamples_  { 0 };
 
-    // Audio-thread-only: written only in prepare(), read only in process().
-    // Not accessed from any other thread; no atomic needed.
-    double sampleRate_ { 44100.0 };
+    // Atomic so that the message thread (e.g. UI info label) can safely read
+    // the sample rate written by prepare() on the device setup thread.
+    std::atomic<double>  sampleRate_         { 44100.0 };
 };
 
 } // namespace ssbb

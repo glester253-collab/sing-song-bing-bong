@@ -63,7 +63,9 @@ float Metronome::nextSample() noexcept
 
 // ---- Audio-thread main entry point ----
 
-void Metronome::processBlock(float* output, int numSamples, const Transport& transport) noexcept
+void Metronome::processBlock(float* output, int numSamples,
+                             const Transport& transport,
+                             int64_t blockStartSamples) noexcept
 {
     // AUDIO THREAD — no allocation, no locks, no logging, no exceptions.
 
@@ -73,33 +75,65 @@ void Metronome::processBlock(float* output, int numSamples, const Transport& tra
     if (!transport.isPlaying())
         return;
 
-    const double bpm = transport.getTempo();
-    const double spb = Transport::bpmToSamplesPerBeat(bpm, sampleRate_);
-
+    const double bpm       = transport.getTempo();
+    const double spb       = Transport::bpmToSamplesPerBeat(bpm, sampleRate_);
     if (spb <= 0.0)
         return;
 
-    const int     numerator  = transport.getTimeSigNumerator();
-    // transport.process() has already advanced position by numSamples this block,
-    // so blockStart is the sample index at which this block began.
-    const int64_t blockStart = transport.getPositionInSamples() -
-                               static_cast<int64_t>(numSamples);
+    const int numerator   = transport.getTimeSigNumerator();
+    const int denominator = transport.getTimeSigDenominator();
+    if (numerator < 1 || denominator < 1)
+        return;
+
+    // One click per denominator note.  The tempo beat unit is a quarter note,
+    // so an eighth note (denominator == 8) is half a quarter note, etc.
+    const double samplesPerClick = spb * 4.0 / static_cast<double>(denominator);
+    if (samplesPerClick <= 0.0)
+        return;
+
+    // Detect a loop wrap within this block.
+    // wrapOffset: first sample index in the block that belongs to the post-wrap
+    //             timeline segment (== numSamples when no wrap occurs).
+    // loopStartSamp: timeline sample index the post-wrap segment begins at.
+    int     wrapOffset    = numSamples;
+    int64_t loopStartSamp = 0;
+
+    if (transport.isLoopEnabled())
+    {
+        const double  loopStartBeat = transport.getLoopStartBeat();
+        const double  loopEndBeat   = transport.getLoopEndBeat();
+        const int64_t loopEndSamp   = Transport::beatsToSamples(loopEndBeat, bpm, sampleRate_);
+        loopStartSamp               = Transport::beatsToSamples(loopStartBeat, bpm, sampleRate_);
+
+        const int64_t rawEnd = blockStartSamples + static_cast<int64_t>(numSamples);
+        if (loopEndSamp > loopStartSamp
+            && rawEnd > loopEndSamp
+            && blockStartSamples < loopEndSamp)
+        {
+            wrapOffset = static_cast<int>(loopEndSamp - blockStartSamples);
+        }
+    }
 
     for (int i = 0; i < numSamples; ++i)
     {
-        // Detect a beat boundary crossing between sample (i-1) and sample i.
-        // When i == 0 this correctly catches a beat at the very first sample
-        // of the block (e.g., the very first block after play()).
-        const double posNow  = static_cast<double>(blockStart + i);
+        // Map sample index to its timeline position, accounting for any loop wrap.
+        const double posNow = (i < wrapOffset)
+            ? static_cast<double>(blockStartSamples + i)
+            : static_cast<double>(loopStartSamp + (i - wrapOffset));
+
+        // Beat-boundary detection: did we cross a click boundary between the
+        // previous and current sample?  Using floor-division so beat 0 is
+        // triggered on the very first sample of playback (posPrev == -1 yields
+        // beatPrev == -1, beatNow == 0 → trigger).
         const double posPrev = posNow - 1.0;
 
-        const auto beatNow  = static_cast<int64_t>(std::floor(posNow  / spb));
-        const auto beatPrev = static_cast<int64_t>(std::floor(posPrev / spb));
+        const auto beatNow  = static_cast<int64_t>(std::floor(posNow  / samplesPerClick));
+        const auto beatPrev = static_cast<int64_t>(std::floor(posPrev / samplesPerClick));
 
         if (beatNow != beatPrev)
         {
-            // Positive-safe modulo for accent detection; beatNow can theoretically
-            // be negative near the start of playback if blockStart wrapped.
+            // Accent on the first click of each bar (beat index 0 mod numerator).
+            // Positive-safe modulo handles negative beat indices near timeline start.
             const int mod = static_cast<int>(
                 ((beatNow % static_cast<int64_t>(numerator)) +
                   static_cast<int64_t>(numerator)) %

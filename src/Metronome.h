@@ -22,9 +22,12 @@ public:
     bool isEnabled() const noexcept        { return enabled_.load(std::memory_order_relaxed); }
 
     /// Audio thread: mix metronome clicks into output[0..numSamples-1].
-    /// transport.process() must have already advanced the position for this block
-    /// before this method is called (see AudioEngine).
-    void processBlock(float* output, int numSamples, const Transport& transport) noexcept;
+    /// blockStartSamples is the transport position at the *start* of the block
+    /// (i.e. before transport.process() advanced the position for this block).
+    /// Handles blocks that cross a loop boundary: clicks are placed at the correct
+    /// sample offset within the block even when the timeline wraps mid-block.
+    void processBlock(float* output, int numSamples, const Transport& transport,
+                      int64_t blockStartSamples) noexcept;
 
 private:
     void  triggerClick(bool accented) noexcept;

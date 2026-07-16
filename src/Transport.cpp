@@ -47,7 +47,8 @@ void Transport::stop() noexcept
 void Transport::setPositionInBeats(double beats) noexcept
 {
     const double bpm = tempo_.load(std::memory_order_relaxed);
-    positionInSamples_.store(beatsToSamples(beats, bpm, sampleRate_),
+    const double sr  = sampleRate_.load(std::memory_order_relaxed);
+    positionInSamples_.store(beatsToSamples(beats, bpm, sr),
                              std::memory_order_relaxed);
 }
 
@@ -55,9 +56,11 @@ void Transport::setPositionInBeats(double beats) noexcept
 
 void Transport::prepare(double sampleRate, int /*blockSize*/) noexcept
 {
-    // Called on the message thread before the audio device starts.
-    // Safe to write sampleRate_ here because the audio callback is not yet running.
-    sampleRate_ = (sampleRate > 0.0) ? sampleRate : 44100.0;
+    // Called on the device setup thread before the audio callback starts.
+    // Writing through the atomic makes the value safe to read from the message
+    // thread (e.g. the UI info label) without a data race.
+    sampleRate_.store((sampleRate > 0.0) ? sampleRate : 44100.0,
+                      std::memory_order_relaxed);
 }
 
 void Transport::process(int numSamples) noexcept
@@ -65,6 +68,8 @@ void Transport::process(int numSamples) noexcept
     // AUDIO THREAD — no allocation, no locks, no logging, no exceptions.
     if (!playing_.load(std::memory_order_relaxed))
         return;
+
+    const double sr = sampleRate_.load(std::memory_order_relaxed);
 
     int64_t pos = positionInSamples_.load(std::memory_order_relaxed);
     pos += static_cast<int64_t>(numSamples);
@@ -74,8 +79,8 @@ void Transport::process(int numSamples) noexcept
         const double  bpm        = tempo_.load(std::memory_order_relaxed);
         const double  loopStart  = loopStartBeat_.load(std::memory_order_relaxed);
         const double  loopEnd    = loopEndBeat_.load(std::memory_order_relaxed);
-        const int64_t startSamp  = beatsToSamples(loopStart, bpm, sampleRate_);
-        const int64_t endSamp    = beatsToSamples(loopEnd,   bpm, sampleRate_);
+        const int64_t startSamp  = beatsToSamples(loopStart, bpm, sr);
+        const int64_t endSamp    = beatsToSamples(loopEnd,   bpm, sr);
 
         if (endSamp > startSamp && pos >= endSamp)
         {

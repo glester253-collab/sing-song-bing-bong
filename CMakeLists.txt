@@ -83,11 +83,12 @@ if(BUILD_TESTING)
 
     add_test(NAME ssbb.bootstrap COMMAND ssbb_bootstrap_tests)
 
-    # Transport tests: pure C++20 — no JUCE dependency.
-    # Links only Transport.cpp so the binary is lightweight and fast.
+    # Transport + Metronome tests: pure C++20 — no JUCE dependency.
+    # Both Transport.cpp and Metronome.cpp carry no JUCE headers.
     add_executable(ssbb_transport_tests
         tests/transport_tests.cpp
         src/Transport.cpp
+        src/Metronome.cpp
     )
 
     target_include_directories(ssbb_transport_tests

@@ -87,18 +87,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         if (outputChannelData[ch] != nullptr)
             juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
 
-    // 2. Advance the transport position (atomic store, no allocation).
+    // 2. Capture the block-start position *before* advancing the transport.
+    //    Metronome needs this to correctly place clicks across loop boundaries.
+    const int64_t blockStart = transport_.getPositionInSamples();
+
+    // 3. Advance the transport position (atomic store, no allocation).
     transport_.process(numSamples);
 
-    // 3. Mix metronome clicks into channel 0.
+    // 4. Mix metronome clicks into channel 0.
     if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-        metronome_.processBlock(outputChannelData[0], numSamples, transport_);
+        metronome_.processBlock(outputChannelData[0], numSamples, transport_, blockStart);
 
-    // 4. Copy mono metronome signal to all additional output channels.
-    for (int ch = 1; ch < numOutputChannels; ++ch)
-        if (outputChannelData[ch] != nullptr)
-            juce::FloatVectorOperations::copy(
-                outputChannelData[ch], outputChannelData[0], numSamples);
+    // 5. Copy mono metronome signal to all additional output channels.
+    //    Guard the source pointer: if channel 0 is null there is nothing to copy.
+    if (outputChannelData[0] != nullptr)
+    {
+        for (int ch = 1; ch < numOutputChannels; ++ch)
+            if (outputChannelData[ch] != nullptr)
+                juce::FloatVectorOperations::copy(
+                    outputChannelData[ch], outputChannelData[0], numSamples);
+    }
 }
 
 } // namespace ssbb
