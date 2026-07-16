@@ -7,6 +7,9 @@
 //   NO file/network I/O, NO exceptions, NO AI work.
 #include "AudioEngine.h"
 
+#include <chrono>
+#include <thread>
+
 namespace ssbb {
 
 AudioEngine::AudioEngine()
@@ -16,11 +19,35 @@ AudioEngine::AudioEngine()
     // can later supply a saved XmlElement for recall.
     deviceManager_.initialise(2, 2, nullptr, true);
     deviceManager_.addAudioCallback(this);
+
+    // Start the drain worker thread.  It sleeps 5 ms between drain passes
+    // so the maximum latency from record-stop to file-close is ~5 ms.
+    workerThread_ = std::thread([this] { workerThreadLoop(); });
 }
 
 AudioEngine::~AudioEngine()
 {
+    // 1. Stop audio callbacks first so the audio thread no longer writes to
+    //    vocalTrack_.recordBuffer_.
     deviceManager_.removeAudioCallback(this);
+
+    // 2. Signal the worker thread and wait for it to finish.
+    workerStop_.store(true, std::memory_order_release);
+    if (workerThread_.joinable())
+        workerThread_.join();
+    // All members are now safe to destroy.
+}
+
+void AudioEngine::workerThreadLoop()
+{
+    while (!workerStop_.load(std::memory_order_relaxed))
+    {
+        vocalTrack_.drainToFile();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    // Final drain: flush any samples captured between the last loop iteration
+    // and the audio callback being removed.
+    vocalTrack_.drainToFile();
 }
 
 // ---- AudioIODeviceCallback (message thread / device thread) ----
@@ -36,6 +63,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
     transport_.prepare(sr, blockSize);
     metronome_.prepare(sr, blockSize);
+    vocalTrack_.prepare(sr, blockSize);
 
     numInputChannels_.store(
         device->getActiveInputChannels().countNumberOfSetBits(),
@@ -66,11 +94,11 @@ void AudioEngine::audioDeviceError(const juce::String& /*errorMessage*/)
 // ---- AUDIO THREAD ----
 
 void AudioEngine::audioDeviceIOCallbackWithContext(
-    const float* const* /*inputChannelData*/,
-    int          /*numInputChannels*/,
-    float* const* outputChannelData,
-    int           numOutputChannels,
-    int           numSamples,
+    const float* const* inputChannelData,
+    int                 numInputChannels,
+    float* const*       outputChannelData,
+    int                 numOutputChannels,
+    int                 numSamples,
     const juce::AudioIODeviceCallbackContext& /*context*/)
 {
     // Flush denormals to zero for this audio callback invocation.
@@ -95,8 +123,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
         metronome_.processBlock(outputChannelData[0], numSamples, transport_, blockStart);
 
-    // 5. Copy mono metronome signal to all additional output channels.
-    //    Guard the source pointer: if channel 0 is null there is nothing to copy.
+    // 5. VocalTrack: input monitoring (mix input → output) and ring-buffer capture.
+    //    processBlock uses only atomics and the lock-free RecordBuffer —
+    //    no allocation, no mutex, no file I/O.
+    vocalTrack_.processBlock(inputChannelData,  numInputChannels,
+                              outputChannelData, numOutputChannels,
+                              numSamples);
+
+    // 6. Copy channel 0 (now contains metronome + vocal monitor) to all
+    //    additional output channels.
     if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
     {
         for (int ch = 1; ch < numOutputChannels; ++ch)

@@ -1,20 +1,23 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
+#include <thread>
 #include "Transport.h"
 #include "Metronome.h"
+#include "VocalTrack.h"
 
 namespace ssbb {
 
 /// AudioEngine owns the JUCE AudioDeviceManager and bridges it to our
-/// lock-free Transport and Metronome.
+/// lock-free Transport, Metronome, and VocalTrack.
 ///
 /// Ownership model:
 ///   - AudioEngine is created on the message thread before MainWindow.
 ///   - The AudioIODeviceCallback methods are called on the audio thread.
-///   - All public getters (getTransport, getMetronome, etc.) are safe to
-///     call from any thread — they return references to objects whose
-///     audio-thread-visible state is protected by atomics.
+///   - All public getters are safe to call from any thread — audio-thread-
+///     visible state is protected by atomics.
+///   - A worker thread runs continuously to drain the VocalTrack ring buffer
+///     to disk.  It is started in the constructor and joined in the destructor.
 class AudioEngine final : public juce::AudioIODeviceCallback
 {
 public:
@@ -22,8 +25,9 @@ public:
     ~AudioEngine() override;
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager_; }
-    Transport&  getTransport()  noexcept { return transport_; }
-    Metronome&  getMetronome()  noexcept { return metronome_; }
+    Transport&   getTransport()   noexcept { return transport_; }
+    Metronome&   getMetronome()   noexcept { return metronome_; }
+    VocalTrack&  getVocalTrack()  noexcept { return vocalTrack_; }
 
     /// Number of active input channels reported at the last audioDeviceAboutToStart.
     int getNumInputChannels() const noexcept
@@ -55,13 +59,21 @@ public:
     void audioDeviceError(const juce::String& errorMessage) override;
 
 private:
+    /// Entry point for the drain worker thread.
+    void workerThreadLoop();
+
     juce::AudioDeviceManager deviceManager_;
-    Transport  transport_;
-    Metronome  metronome_;
+    Transport   transport_;
+    Metronome   metronome_;
+    VocalTrack  vocalTrack_;
 
     std::atomic<int>    numInputChannels_   { 0 };
     std::atomic<int>    numOutputChannels_  { 0 };
     std::atomic<double> estimatedLatencyMs_ { 0.0 };
+
+    // Drain worker thread: flushes VocalTrack ring buffer → WAV file.
+    std::atomic<bool>   workerStop_         { false };
+    std::thread         workerThread_;
 };
 
 } // namespace ssbb

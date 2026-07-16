@@ -44,6 +44,10 @@ if(SSBB_BUILD_STANDALONE_APP)
             src/AudioEngine.cpp
             src/Transport.cpp
             src/Metronome.cpp
+            src/VocalTrack.cpp
+            src/TakeManager.cpp
+            src/WaveformCache.cpp
+            src/SessionDocument.cpp
     )
 
     target_include_directories(SingSongBingBongApp
@@ -98,4 +102,22 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME ssbb.transport COMMAND ssbb_transport_tests)
+
+    # Vocal-track subsystem tests: pure C++20 — no JUCE dependency.
+    # Links the recording subsystem sources that have no JUCE includes.
+    add_executable(ssbb_vocal_track_tests
+        tests/vocal_track_tests.cpp
+        src/VocalTrack.cpp
+        src/TakeManager.cpp
+        src/WaveformCache.cpp
+        src/SessionDocument.cpp
+    )
+
+    target_include_directories(ssbb_vocal_track_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_BINARY_DIR}/generated
+    )
+
+    add_test(NAME ssbb.vocal_track COMMAND ssbb_vocal_track_tests)
 endif()
