@@ -56,14 +56,11 @@ void AudioEngine::audioDeviceStopped()
     transport_.stop();
 }
 
-void AudioEngine::audioDeviceError(const juce::String& errorMessage)
+void AudioEngine::audioDeviceError(const juce::String& /*errorMessage*/)
 {
-    // Stop the transport so the UI reflects the error state.
+    // This may be called from a device thread. Keep it realtime-safe and let
+    // the UI observe the stopped transport without logging or allocating here.
     transport_.stop();
-    // DBG is only safe here if this callback is on the message thread.
-    // On some platforms it may be called from a device thread.  The transport
-    // stop above is the only audio-state change we make; the log is best-effort.
-    DBG("AudioEngine error: " << errorMessage);
 }
 
 // ---- AUDIO THREAD ----
@@ -100,7 +97,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
 
     // 5. Copy mono metronome signal to all additional output channels.
     //    Guard the source pointer: if channel 0 is null there is nothing to copy.
-    if (outputChannelData[0] != nullptr)
+    if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
     {
         for (int ch = 1; ch < numOutputChannels; ++ch)
             if (outputChannelData[ch] != nullptr)
