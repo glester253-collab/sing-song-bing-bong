@@ -24,8 +24,31 @@ Foundation and architecture stage. The repository now includes:
 - [Agent rules](AGENTS.md)
 - a repository-level Studio Architect agent under `.github/agents/`
 - GitHub Copilot repository instructions under `.github/copilot-instructions.md`
+- a pinned JUCE/CMake bootstrap for the first Windows standalone app target and CI workflow
 
 The first engineering milestone is a safe Windows desktop prototype that records and plays back one vocal track using C++20, JUCE, and CMake.
+
+## Build bootstrap
+
+### JUCE pin and licence path
+
+- JUCE version: `8.0.14`
+- Pinned JUCE commit: `2cdfca8feb300fb424002ba2c2751569e5bacb64`
+- Pinned JUCE archive SHA-256: `ceb18e4ac9ab5ea71f3f20240d5852707767a1789ab43d06656a296da9e62f3e`
+- Repository licence path for this public bootstrap: JUCE's AGPLv3 option
+- Closed-source distribution requirement: obtain and document a commercial JUCE 8 licence before shipping non-AGPL binaries
+
+### Windows configure, build, and test
+
+Run these commands from a Windows developer shell with CMake 3.31+ and MSVC available:
+
+```bash
+cmake --preset windows-msvc
+cmake --build --preset windows-debug --parallel
+ctest --preset windows-test-debug --output-on-failure
+```
+
+The Windows standalone target intentionally opens a blank native JUCE window and does not start audio devices in this bootstrap milestone.
 
 ## Working with the agent
 

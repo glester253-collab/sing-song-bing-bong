@@ -1,0 +1,10 @@
+#pragma once
+
+namespace ssbb::bootstrap
+{
+inline constexpr auto kDisplayName = "Sing Song Bing Bong";
+inline constexpr auto kVersion = "@PROJECT_VERSION@";
+inline constexpr auto kJuceVersion = "@SSBB_JUCE_VERSION@";
+inline constexpr auto kJuceCommit = "@SSBB_JUCE_COMMIT@";
+inline constexpr auto kJuceLicense = "@SSBB_JUCE_LICENSE@";
+} // namespace ssbb::bootstrap

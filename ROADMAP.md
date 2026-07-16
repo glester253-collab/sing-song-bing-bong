@@ -2,8 +2,8 @@
 
 ## Milestone 0 — Foundation
 
-- [ ] Pin JUCE after license review and create the CMake project
-- [ ] Add Windows CI configure/build/test
+- [x] Pin JUCE after license review and create the CMake project
+- [x] Add Windows CI configure/build/test
 - [ ] Add coding, formatting, sanitizer, and release conventions
 - [ ] Create the session schema and migration strategy
 - [ ] Create audio-device diagnostics and a latency test
