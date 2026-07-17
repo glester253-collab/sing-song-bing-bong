@@ -1,54 +1,45 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "AudioEngine.h"
-#include "VocalTrack.h"
+#include "pro/AI/AiVocalEngine.h"
+#include "pro/Song/SongWizard.h"
+#include "pro/UI/TransportBar.h"
+#include "pro/UI/SongWizardPanel.h"
+#include "pro/UI/BeatMakerPanel.h"
+#include "pro/UI/VocalPanel.h"
+#include "pro/UI/MasteringPanel.h"
 
 namespace ssbb {
-
-/// MainComponent
-/// Hosts the JUCE AudioDeviceSelectorComponent plus a transport control row,
-/// a vocal-track recording row, and a one-line info label updated at 20 Hz
-/// via a JUCE Timer.
-///
-/// All UI interactions call Transport / Metronome / VocalTrack setters on the
-/// message thread — never from inside the audio callback.
-class MainComponent final : public juce::Component,
-                             private juce::Timer
+class MainComponent final : public juce::Component, private juce::Timer
 {
 public:
     explicit MainComponent(AudioEngine& engine);
     ~MainComponent() override;
-
+    void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
+    class VocalGenerationJob;
+    class ExportJob;
     void timerCallback() override;
-    void updateInfoLabel();
+    void startOrStopRecording();
+    void requestExport();
+    void acceptGeneratedVocal(std::vector<float> audio);
 
     AudioEngine& engine_;
+    SongWizard wizard_;
+    SongStructure song_;
+    AiVocalEngine ai_;
+    juce::ThreadPool workerPool_ { 2 };
+    std::vector<float> lastGenerated_;
 
-    // Device selector (must be initialised in the member-initialiser list
-    // because AudioDeviceSelectorComponent has no default constructor).
+    TransportBar transportBar_;
+    SongWizardPanel wizardPanel_;
+    BeatMakerPanel beatPanel_;
+    VocalPanel vocalPanel_;
+    MasteringPanel masteringPanel_;
     juce::AudioDeviceSelectorComponent deviceSelector_;
-
-    // Transport controls
-    juce::TextButton   playStopButton_  { "Play" };
-    juce::Label        tempoLabel_;
-    juce::Slider       tempoSlider_;
-    juce::Label        timeSigLabel_;
-    juce::ComboBox     numeratorBox_;
-    juce::Label        dividerLabel_    { {}, "/" };
-    juce::ComboBox     denominatorBox_;
-    juce::ToggleButton loopToggle_      { "Loop" };
-    juce::ToggleButton metronomeToggle_ { "Metronome" };
-
-    // Vocal-track recording controls
-    juce::ToggleButton armButton_     { "Arm" };
-    juce::ToggleButton monitorButton_ { "Monitor" };
-    juce::TextButton   recordButton_  { "Record" };
-
-    // Status bar
-    juce::Label infoLabel_;
+    juce::Label deviceHeading_;
+    std::unique_ptr<juce::FileChooser> chooser_;
 };
-
 } // namespace ssbb

@@ -17,16 +17,22 @@ The project takes inspiration from broad West Coast production qualities—confi
 
 ## Current status
 
-Foundation and architecture stage. The repository now includes:
+The repository now includes the original safe-recording foundation plus a PRO song-sketching workflow:
 
 - [Architecture](ARCHITECTURE.md)
 - [Roadmap](ROADMAP.md)
 - [Agent rules](AGENTS.md)
 - a repository-level Studio Architect agent under `.github/agents/`
 - GitHub Copilot repository instructions under `.github/copilot-instructions.md`
-- a pinned JUCE/CMake bootstrap for the first Windows standalone app target and CI workflow
+- a pinned JUCE/CMake Windows app target and CI workflow
+- guided intro/verse/hook/outro rap structures
+- a tempo-locked 16-step kick/snare/hat sequencer with two original presets
+- an original vocal chain and mastering chain built with `juce::dsp`
+- live vocal recording through the existing timestamped-take subsystem
+- text-to-vocal preview generation on a worker thread, with an optional ONNX Runtime backend
+- offline WAV rendering of the full mix, vocal stem, and instrument stem
 
-The first engineering milestone is a safe Windows desktop prototype that records and plays back one vocal track using C++20, JUCE, and CMake.
+The app preserves the safe C++20/JUCE recording architecture and keeps DSP deterministic and AI/file work off the real-time callback.
 
 ## Build bootstrap
 
@@ -48,7 +54,17 @@ cmake --build --preset windows-debug --parallel
 ctest --preset windows-test-debug --output-on-failure
 ```
 
-The Windows standalone target intentionally opens a blank native JUCE window and does not start audio devices in this bootstrap milestone.
+The standalone target opens the full studio UI and exposes JUCE's audio-device selector below the production panels.
+
+### Optional ONNX Runtime backend
+
+The default build is usable without model files and produces a clearly synthetic preview voice. To compile the model bridge, provide a licensed ONNX Runtime C/C++ SDK and enable the option:
+
+```bash
+cmake --preset windows-msvc -DSSBB_ENABLE_ONNX=ON -DONNXRUNTIME_ROOT=C:/sdk/onnxruntime
+```
+
+Place licensed, consent-safe `acoustic.onnx` and `vocoder.onnx` files in a `models` directory beside the executable. Model weights are intentionally ignored by Git. The bridge documents its expected tensor names so it can be adapted to the chosen model contract. This project does not provide voice cloning, identity imitation, or artist impersonation.
 
 ## Working with the agent
 

@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <thread>
+#include <algorithm>
 
 namespace ssbb {
 
@@ -64,6 +65,17 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     transport_.prepare(sr, blockSize);
     metronome_.prepare(sr, blockSize);
     vocalTrack_.prepare(sr, blockSize);
+    beatEngine_.prepare(sr, blockSize);
+    vocalChain_.prepare({ sr, static_cast<juce::uint32>(blockSize), 2 });
+    masteringChain_.prepare({ sr, static_cast<juce::uint32>(blockSize), 2 });
+    // Three minutes of mono generated-vocal capacity. Allocation is on the
+    // device/message thread, never in the audio callback.
+    for (auto& slot : generatedVocal_)
+        slot.assign(static_cast<size_t>(sr * 180.0), 0.0f);
+    generatedVocalLength_ = { 0, 0, 0 };
+    activeGeneratedVocal_.store(0, std::memory_order_release);
+    generatedVocalPosition_ = 0;
+    lastGeneratedVocalSlot_ = -1;
 
     numInputChannels_.store(
         device->getActiveInputChannels().countNumberOfSetBits(),
@@ -82,6 +94,18 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 void AudioEngine::audioDeviceStopped()
 {
     transport_.stop();
+}
+
+void AudioEngine::loadGeneratedVocal(const std::vector<float>& samples) noexcept
+{
+    const int active = activeGeneratedVocal_.load(std::memory_order_acquire);
+    const int reading = audioReadingVocal_.load(std::memory_order_acquire);
+    int inactive = 0;
+    while (inactive == active || inactive == reading) ++inactive;
+    const auto count = std::min(samples.size(), generatedVocal_[static_cast<size_t>(inactive)].size());
+    std::copy_n(samples.begin(), count, generatedVocal_[static_cast<size_t>(inactive)].begin());
+    generatedVocalLength_[static_cast<size_t>(inactive)] = static_cast<int>(count);
+    activeGeneratedVocal_.store(inactive, std::memory_order_release);
 }
 
 void AudioEngine::audioDeviceError(const juce::String& /*errorMessage*/)
@@ -123,6 +147,28 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
         metronome_.processBlock(outputChannelData[0], numSamples, transport_, blockStart);
 
+    // 4b. Render the deterministic step sequencer only while transport runs.
+    if (transport_.isPlaying())
+    {
+        beatEngine_.setTempo(transport_.getTempo());
+        beatEngine_.render(outputChannelData, numOutputChannels, numSamples);
+        const int activeVocal = activeGeneratedVocal_.load(std::memory_order_acquire);
+        audioReadingVocal_.store(activeVocal, std::memory_order_release);
+        if (activeVocal != lastGeneratedVocalSlot_) { generatedVocalPosition_ = 0; lastGeneratedVocalSlot_ = activeVocal; }
+        const int vocalLength = generatedVocalLength_[static_cast<size_t>(activeVocal)];
+        if (vocalLength > 0)
+        {
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const float sample = generatedVocal_[static_cast<size_t>(activeVocal)][static_cast<size_t>(generatedVocalPosition_)];
+                for (int ch = 0; ch < numOutputChannels; ++ch)
+                    if (outputChannelData[ch] != nullptr) outputChannelData[ch][i] += sample;
+                generatedVocalPosition_ = (generatedVocalPosition_ + 1) % vocalLength;
+            }
+        }
+        audioReadingVocal_.store(-1, std::memory_order_release);
+    }
+
     // 5. VocalTrack: input monitoring (mix input → output) and ring-buffer capture.
     //    processBlock uses only atomics and the lock-free RecordBuffer —
     //    no allocation, no mutex, no file I/O.
@@ -138,6 +184,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
             if (outputChannelData[ch] != nullptr)
                 juce::FloatVectorOperations::copy(
                     outputChannelData[ch], outputChannelData[0], numSamples);
+    }
+
+    // 7. Process the already-prepared output view. AudioBuffer references the
+    // device buffers and performs no allocation here.
+    if (numOutputChannels > 0)
+    {
+        juce::AudioBuffer<float> outputView(outputChannelData, numOutputChannels, numSamples);
+        vocalChain_.process(outputView);
+        masteringChain_.process(outputView);
     }
 }
 

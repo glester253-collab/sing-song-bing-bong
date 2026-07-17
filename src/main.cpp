@@ -22,7 +22,7 @@ public:
         setUsingNativeTitleBar(true);
         setResizable(true, true);
         setContentOwned(new ssbb::MainComponent(engine), true);
-        centreWithSize(700, 560);
+        centreWithSize(1400, 900);
         setVisible(true);
     }
 
