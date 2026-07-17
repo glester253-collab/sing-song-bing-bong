@@ -5,8 +5,8 @@ void VocalDSPChain::prepare(const juce::dsp::ProcessSpec& spec)
 {
     comp_.prepare(spec); low_.prepare(spec); high_.prepare(spec); reverb_.prepare(spec); delay_.prepare(spec); limiter_.prepare(spec);
     comp_.setThreshold(-18.0f); comp_.setRatio(3.0f); comp_.setAttack(8.0f); comp_.setRelease(90.0f);
-    *low_.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(spec.sampleRate, 85.0);
-    *high_.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(spec.sampleRate, 6500.0, 0.75f, 1.18f);
+    low_.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(spec.sampleRate, 85.0);
+    high_.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(spec.sampleRate, 6500.0, 0.75f, 1.18f);
     juce::dsp::Reverb::Parameters p; p.roomSize = 0.2f; p.damping = 0.55f; p.wetLevel = 0.08f; p.dryLevel = 0.92f; p.width = 0.8f; reverb_.setParameters(p);
     delaySamples_ = static_cast<float>(spec.sampleRate * 0.085); delay_.setDelay(delaySamples_);
     limiter_.setThreshold(-1.0f); limiter_.setRelease(60.0f); reset();
