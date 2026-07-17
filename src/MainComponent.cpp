@@ -9,14 +9,14 @@ MainComponent::MainComponent(AudioEngine& engine)
     : engine_(engine),
       // AudioDeviceSelectorComponent has no default constructor — must be here.
       deviceSelector_(engine.getDeviceManager(),
-                      /*minInputChannels*/  0,
-                      /*maxInputChannels*/  2,
-                      /*minOutputChannels*/ 0,
-                      /*maxOutputChannels*/ 2,
-                      /*showMidiInputOptions*/    false,
-                      /*showMidiOutputSelector*/  false,
-                      /*showChannelsAsStereoPairs*/ true,
-                      /*hideAdvancedOptionsWithButton*/ false)
+                       /*minInputChannels*/  0,
+                       /*maxInputChannels*/  2,
+                       /*minOutputChannels*/ 0,
+                       /*maxOutputChannels*/ 2,
+                       /*showMidiInputOptions*/    false,
+                       /*showMidiOutputSelector*/  false,
+                       /*showChannelsAsStereoPairs*/ true,
+                       /*hideAdvancedOptionsWithButton*/ false)
 {
     // ---- Device selector ----
     addAndMakeVisible(deviceSelector_);
@@ -102,6 +102,51 @@ MainComponent::MainComponent(AudioEngine& engine)
     };
     addAndMakeVisible(metronomeToggle_);
 
+    // ---- Arm ----
+    // Toggles the VocalTrack between Armed and Idle.
+    armButton_.setToggleState(false, juce::dontSendNotification);
+    armButton_.onClick = [this]
+    {
+        auto& vt = engine_.getVocalTrack();
+        if (armButton_.getToggleState())
+            vt.arm();
+        else
+            vt.disarm();
+    };
+    addAndMakeVisible(armButton_);
+
+    // ---- Monitor ----
+    // Enables live input monitoring (dry input → output) without recording.
+    monitorButton_.setToggleState(false, juce::dontSendNotification);
+    monitorButton_.onClick = [this]
+    {
+        auto& vt = engine_.getVocalTrack();
+        if (monitorButton_.getToggleState())
+            vt.startMonitoring();
+        else
+            vt.stopMonitoring();
+    };
+    addAndMakeVisible(monitorButton_);
+
+    // ---- Record ----
+    // Starts recording if Armed/Monitoring; stops if Recording/Stopping.
+    addAndMakeVisible(recordButton_);
+    recordButton_.onClick = [this]
+    {
+        auto& vt = engine_.getVocalTrack();
+        const auto state = vt.getState();
+        if (state == VocalTrack::State::Recording ||
+            state == VocalTrack::State::Stopping)
+        {
+            vt.stopRecording();
+        }
+        else if (state == VocalTrack::State::Armed ||
+                 state == VocalTrack::State::Monitoring)
+        {
+            vt.startRecording();
+        }
+    };
+
     // ---- Info label ----
     infoLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(infoLabel_);
@@ -111,7 +156,7 @@ MainComponent::MainComponent(AudioEngine& engine)
     engine_.getTransport().setTimeSignature(4, 4);
 
     startTimerHz(20);          // 50 ms refresh for info label / button sync
-    setSize(700, 500);
+    setSize(700, 560);
 }
 
 MainComponent::~MainComponent()
@@ -143,6 +188,15 @@ void MainComponent::resized()
     row.removeFromLeft(8);
     metronomeToggle_.setBounds(row.removeFromLeft(90));
 
+    // Vocal-track recording row (below the transport row)
+    bounds.removeFromTop(6);
+    auto recRow = bounds.removeFromTop(36);
+    armButton_.setBounds(recRow.removeFromLeft(60));
+    recRow.removeFromLeft(8);
+    monitorButton_.setBounds(recRow.removeFromLeft(80));
+    recRow.removeFromLeft(8);
+    recordButton_.setBounds(recRow.removeFromLeft(90));
+
     // Info label
     bounds.removeFromTop(8);
     infoLabel_.setBounds(bounds.removeFromTop(28));
@@ -156,6 +210,24 @@ void MainComponent::timerCallback()
     // (handles external stops such as device errors).
     playStopButton_.setButtonText(
         engine_.getTransport().isPlaying() ? "Stop" : "Play");
+
+    // Sync vocal-track buttons with actual state (state can change on the
+    // worker thread when the Stopping → Idle transition fires).
+    const auto vtState = engine_.getVocalTrack().getState();
+
+    armButton_.setToggleState(
+        vtState != VocalTrack::State::Idle,
+        juce::dontSendNotification);
+
+    monitorButton_.setToggleState(
+        vtState == VocalTrack::State::Monitoring,
+        juce::dontSendNotification);
+
+    if (vtState == VocalTrack::State::Recording ||
+        vtState == VocalTrack::State::Stopping)
+        recordButton_.setButtonText("Stop Rec");
+    else
+        recordButton_.setButtonText("Record");
 
     updateInfoLabel();
 }
@@ -173,12 +245,26 @@ void MainComponent::updateInfoLabel()
                                 ? Transport::samplesToBeats(posSamp, bpm, sr)
                                 : 0.0;
 
+    // Vocal-track state label
+    const auto vtState = engine_.getVocalTrack().getState();
+    juce::String vtLabel;
+    switch (vtState)
+    {
+        case VocalTrack::State::Idle:       vtLabel = "Idle";       break;
+        case VocalTrack::State::Armed:      vtLabel = "Armed";      break;
+        case VocalTrack::State::Monitoring: vtLabel = "Monitoring"; break;
+        case VocalTrack::State::Recording:  vtLabel = "REC";        break;
+        case VocalTrack::State::Stopping:   vtLabel = "Stopping";   break;
+        default:                            vtLabel = "?";           break;
+    }
+
     juce::String info;
-    info << "In: "         << inCh  << " ch"
-         << "  |  Out: "   << outCh << " ch"
+    info << "In: "           << inCh  << " ch"
+         << "  |  Out: "     << outCh << " ch"
          << "  |  Latency: " << juce::String(latMs,    1) << " ms"
-         << "  |  Position: " << juce::String(posBeats, 3) << " beats"
-         << "  |  " << juce::String(bpm, 1) << " BPM";
+         << "  |  Pos: "     << juce::String(posBeats, 3) << " beats"
+         << "  |  "          << juce::String(bpm, 1)      << " BPM"
+         << "  |  Vocal: "   << vtLabel;
 
     infoLabel_.setText(info, juce::dontSendNotification);
 }

@@ -1,15 +1,17 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "AudioEngine.h"
+#include "VocalTrack.h"
 
 namespace ssbb {
 
 /// MainComponent
-/// Hosts the JUCE AudioDeviceSelectorComponent plus a transport control row
-/// and a one-line info label updated at 20 Hz via a JUCE Timer.
+/// Hosts the JUCE AudioDeviceSelectorComponent plus a transport control row,
+/// a vocal-track recording row, and a one-line info label updated at 20 Hz
+/// via a JUCE Timer.
 ///
-/// All UI interactions call Transport / Metronome setters on the message
-/// thread — never from inside the audio callback.
+/// All UI interactions call Transport / Metronome / VocalTrack setters on the
+/// message thread — never from inside the audio callback.
 class MainComponent final : public juce::Component,
                              private juce::Timer
 {
@@ -39,6 +41,11 @@ private:
     juce::ComboBox     denominatorBox_;
     juce::ToggleButton loopToggle_      { "Loop" };
     juce::ToggleButton metronomeToggle_ { "Metronome" };
+
+    // Vocal-track recording controls
+    juce::ToggleButton armButton_     { "Arm" };
+    juce::ToggleButton monitorButton_ { "Monitor" };
+    juce::TextButton   recordButton_  { "Record" };
 
     // Status bar
     juce::Label infoLabel_;
