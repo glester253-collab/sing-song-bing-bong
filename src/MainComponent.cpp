@@ -64,7 +64,8 @@ MainComponent::MainComponent(AudioEngine& engine)
     : engine_(engine), song_(wizard_.createClassicRap()), beatPanel_(engine.getBeatEngine()), masteringPanel_(engine.getMasteringChain()),
       deviceSelector_(engine.getDeviceManager(),0,2,0,2,false,false,true,false)
 {
-    for(auto*c:{static_cast<juce::Component*>(&transportBar_),&wizardPanel_,&beatPanel_,&vocalPanel_,&masteringPanel_,&deviceHeading_,&deviceSelector_})addAndMakeVisible(c);
+    addAndMakeVisible(transportBar_); addAndMakeVisible(wizardPanel_); addAndMakeVisible(beatPanel_); addAndMakeVisible(vocalPanel_);
+    addAndMakeVisible(masteringPanel_); addAndMakeVisible(deviceHeading_); addAndMakeVisible(deviceSelector_);
     deviceHeading_.setText("Audio device and recording setup",juce::dontSendNotification);deviceHeading_.setFont(juce::FontOptions(15.0f,juce::Font::bold));
     transportBar_.onPlay=[this]{engine_.getTransport().play();}; transportBar_.onStop=[this]{engine_.getTransport().stop();}; transportBar_.onRecord=[this]{startOrStopRecording();}; transportBar_.onExport=[this]{requestExport();};
     wizardPanel_.onApply=[this](int verse,int hook,int count){song_=wizard_.createClassicRap(verse,hook,count);vocalPanel_.setStatus("Song structure updated: "+juce::String(static_cast<int>(song_.sections.size()))+" sections");};
