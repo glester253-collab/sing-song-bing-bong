@@ -1,272 +1,83 @@
-// MainComponent.cpp
-// All code here runs on the JUCE message thread.
-// No audio-thread rules apply; JUCE APIs and String construction are fine.
 #include "MainComponent.h"
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <algorithm>
+#include <array>
 
 namespace ssbb {
+class MainComponent::VocalGenerationJob final : public juce::ThreadPoolJob
+{
+public:
+    VocalGenerationJob(MainComponent& owner, juce::String text, float energy)
+        : ThreadPoolJob("Generate vocal"), owner_(owner), text_(std::move(text)), energy_(energy) {}
+    JobStatus runJob() override
+    {
+        auto audio = owner_.ai_.synthesizeFromText(text_.toStdString(), "Verse", "Original", static_cast<float>(owner_.engine_.getTransport().getTempo()), energy_);
+        juce::MessageManager::callAsync([safe = juce::Component::SafePointer<MainComponent>(&owner_), audio = std::move(audio)]() mutable { if (safe != nullptr) safe->acceptGeneratedVocal(std::move(audio)); });
+        return jobHasFinished;
+    }
+private:
+    MainComponent& owner_; juce::String text_; float energy_;
+};
+
+class MainComponent::ExportJob final : public juce::ThreadPoolJob
+{
+public:
+    ExportJob(MainComponent& owner, juce::File file, SongStructure song, std::vector<float> vocal, double bpm, std::array<std::array<bool,16>,3> pattern)
+        : ThreadPoolJob("Export song"), owner_(owner), file_(std::move(file)), song_(std::move(song)), vocal_(std::move(vocal)), bpm_(bpm), pattern_(pattern) {}
+    JobStatus runJob() override
+    {
+        constexpr double sr = 48000.0; int bars = 0; for (const auto& s : song_.sections) bars += s.bars;
+        const int64_t total = std::max<int64_t>(1, static_cast<int64_t>(bars * 4.0 * 60.0 / std::max(50.0, bpm_) * sr));
+        const auto instrumentFile = file_.getSiblingFile(file_.getFileNameWithoutExtension()+"-instruments.wav");
+        const auto vocalFile = file_.getSiblingFile(file_.getFileNameWithoutExtension()+"-vocals.wav");
+        auto mixWriter = openWriter(file_), beatWriter = openWriter(instrumentFile), vocalWriter = openWriter(vocalFile);
+        if (mixWriter == nullptr || beatWriter == nullptr || vocalWriter == nullptr) return finish(false);
+        juce::AudioBuffer<float> mix(2, 1024), beats(2, 1024), vocals(2, 1024);
+        BeatEngine offlineBeat; offlineBeat.prepare(sr, 1024); offlineBeat.setTempo(bpm_); for (int l=0;l<3;++l) for(int s=0;s<16;++s) offlineBeat.setStep(l,s,pattern_[l][s]);
+        MasteringDSPChain master; master.prepare({sr,1024,2});
+        bool ok = true;
+        for (int64_t pos = 0; pos < total && ok && !shouldExit(); pos += 1024)
+        {
+            const int count = static_cast<int>(std::min<int64_t>(1024, total-pos)); beats.clear(); vocals.clear(); mix.clear();
+            float* ptrs[] { beats.getWritePointer(0), beats.getWritePointer(1) }; offlineBeat.render(ptrs,2,count);
+            if (!vocal_.empty()) for (int i=0;i<count;++i) for(int ch=0;ch<2;++ch) vocals.setSample(ch,i,vocal_[static_cast<size_t>(pos+i)%vocal_.size()]);
+            for(int ch=0;ch<2;++ch){mix.copyFrom(ch,0,beats,ch,0,count);mix.addFrom(ch,0,vocals,ch,0,count);} juce::AudioBuffer<float> mixView(mix.getArrayOfWritePointers(),2,count); master.process(mixView);
+            ok = beatWriter->writeFromAudioSampleBuffer(beats,0,count) && vocalWriter->writeFromAudioSampleBuffer(vocals,0,count) && mixWriter->writeFromAudioSampleBuffer(mix,0,count);
+        }
+        return finish(ok && !shouldExit());
+    }
+private:
+    JobStatus finish(bool ok)
+    {
+        juce::MessageManager::callAsync([safe=juce::Component::SafePointer<MainComponent>(&owner_),ok]{if(safe!=nullptr)safe->vocalPanel_.setStatus(ok?"Export complete: mix + two stems":"Export failed or cancelled");}); return jobHasFinished;
+    }
+    static std::unique_ptr<juce::AudioFormatWriter> openWriter(const juce::File& file)
+    {
+        file.deleteFile(); std::unique_ptr<juce::OutputStream> stream=file.createOutputStream(); if(stream==nullptr)return {};
+        juce::WavAudioFormat format; const auto options=juce::AudioFormatWriterOptions{}.withSampleRate(48000.0).withNumChannels(2).withBitsPerSample(24);
+        return format.createWriterFor(stream,options);
+    }
+    MainComponent& owner_; juce::File file_; SongStructure song_; std::vector<float> vocal_; double bpm_; std::array<std::array<bool,16>,3> pattern_;
+};
 
 MainComponent::MainComponent(AudioEngine& engine)
-    : engine_(engine),
-      // AudioDeviceSelectorComponent has no default constructor — must be here.
-      deviceSelector_(engine.getDeviceManager(),
-                       /*minInputChannels*/  0,
-                       /*maxInputChannels*/  2,
-                       /*minOutputChannels*/ 0,
-                       /*maxOutputChannels*/ 2,
-                       /*showMidiInputOptions*/    false,
-                       /*showMidiOutputSelector*/  false,
-                       /*showChannelsAsStereoPairs*/ true,
-                       /*hideAdvancedOptionsWithButton*/ false)
+    : engine_(engine), song_(wizard_.createClassicRap()), beatPanel_(engine.getBeatEngine()), masteringPanel_(engine.getMasteringChain()),
+      deviceSelector_(engine.getDeviceManager(),0,2,0,2,false,false,true,false)
 {
-    // ---- Device selector ----
-    addAndMakeVisible(deviceSelector_);
-
-    // ---- Play / Stop ----
-    addAndMakeVisible(playStopButton_);
-    playStopButton_.onClick = [this]
-    {
-        auto& transport = engine_.getTransport();
-        if (transport.isPlaying())
-        {
-            transport.stop();
-            playStopButton_.setButtonText("Play");
-        }
-        else
-        {
-            transport.play();
-            playStopButton_.setButtonText("Stop");
-        }
-    };
-
-    // ---- Tempo ----
-    tempoLabel_.setText("BPM", juce::dontSendNotification);
-    tempoLabel_.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(tempoLabel_);
-
-    tempoSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    tempoSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    tempoSlider_.setRange(20.0, 300.0, 0.1);
-    tempoSlider_.setValue(120.0, juce::dontSendNotification);
-    tempoSlider_.setTooltip("Tempo (BPM)");
-    tempoSlider_.onValueChange = [this]
-    {
-        engine_.getTransport().setTempo(tempoSlider_.getValue());
-    };
-    addAndMakeVisible(tempoSlider_);
-
-    // ---- Time signature ----
-    timeSigLabel_.setText("Sig:", juce::dontSendNotification);
-    timeSigLabel_.setJustificationType(juce::Justification::centredRight);
-    addAndMakeVisible(timeSigLabel_);
-
-    // Numerator: 1–16; item ID == value for direct use in setTimeSignature.
-    for (int i = 1; i <= 16; ++i)
-        numeratorBox_.addItem(juce::String(i), i);
-    numeratorBox_.setSelectedId(4, juce::dontSendNotification);
-    numeratorBox_.onChange = [this]
-    {
-        engine_.getTransport().setTimeSignature(
-            numeratorBox_.getSelectedId(),
-            denominatorBox_.getSelectedId());
-    };
-    addAndMakeVisible(numeratorBox_);
-
-    // "/" divider label between numerator and denominator boxes
-    addAndMakeVisible(dividerLabel_);
-
-    // Denominator: 2, 4, 8, 16; item ID == value.
-    for (int d : { 2, 4, 8, 16 })
-        denominatorBox_.addItem(juce::String(d), d);
-    denominatorBox_.setSelectedId(4, juce::dontSendNotification);
-    denominatorBox_.onChange = [this]
-    {
-        engine_.getTransport().setTimeSignature(
-            numeratorBox_.getSelectedId(),
-            denominatorBox_.getSelectedId());
-    };
-    addAndMakeVisible(denominatorBox_);
-
-    // ---- Loop ----
-    loopToggle_.setToggleState(false, juce::dontSendNotification);
-    loopToggle_.onClick = [this]
-    {
-        engine_.getTransport().setLoopEnabled(loopToggle_.getToggleState());
-    };
-    addAndMakeVisible(loopToggle_);
-
-    // ---- Metronome ----
-    metronomeToggle_.setToggleState(false, juce::dontSendNotification);
-    metronomeToggle_.onClick = [this]
-    {
-        engine_.getMetronome().setEnabled(metronomeToggle_.getToggleState());
-    };
-    addAndMakeVisible(metronomeToggle_);
-
-    // ---- Arm ----
-    // Toggles the VocalTrack between Armed and Idle.
-    armButton_.setToggleState(false, juce::dontSendNotification);
-    armButton_.onClick = [this]
-    {
-        auto& vt = engine_.getVocalTrack();
-        if (armButton_.getToggleState())
-            vt.arm();
-        else
-            vt.disarm();
-    };
-    addAndMakeVisible(armButton_);
-
-    // ---- Monitor ----
-    // Enables live input monitoring (dry input → output) without recording.
-    monitorButton_.setToggleState(false, juce::dontSendNotification);
-    monitorButton_.onClick = [this]
-    {
-        auto& vt = engine_.getVocalTrack();
-        if (monitorButton_.getToggleState())
-            vt.startMonitoring();
-        else
-            vt.stopMonitoring();
-    };
-    addAndMakeVisible(monitorButton_);
-
-    // ---- Record ----
-    // Starts recording if Armed/Monitoring; stops if Recording/Stopping.
-    addAndMakeVisible(recordButton_);
-    recordButton_.onClick = [this]
-    {
-        auto& vt = engine_.getVocalTrack();
-        const auto state = vt.getState();
-        if (state == VocalTrack::State::Recording ||
-            state == VocalTrack::State::Stopping)
-        {
-            vt.stopRecording();
-        }
-        else if (state == VocalTrack::State::Armed ||
-                 state == VocalTrack::State::Monitoring)
-        {
-            vt.startRecording();
-        }
-    };
-
-    // ---- Info label ----
-    infoLabel_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(infoLabel_);
-
-    // Prime transport defaults so the engine state matches the UI.
-    engine_.getTransport().setTempo(120.0);
-    engine_.getTransport().setTimeSignature(4, 4);
-
-    startTimerHz(20);          // 50 ms refresh for info label / button sync
-    setSize(700, 560);
+    for(auto*c:{static_cast<juce::Component*>(&transportBar_),&wizardPanel_,&beatPanel_,&vocalPanel_,&masteringPanel_,&deviceHeading_,&deviceSelector_})addAndMakeVisible(c);
+    deviceHeading_.setText("Audio device and recording setup",juce::dontSendNotification);deviceHeading_.setFont(juce::FontOptions(15.0f,juce::Font::bold));
+    transportBar_.onPlay=[this]{engine_.getTransport().play();}; transportBar_.onStop=[this]{engine_.getTransport().stop();}; transportBar_.onRecord=[this]{startOrStopRecording();}; transportBar_.onExport=[this]{requestExport();};
+    wizardPanel_.onApply=[this](int verse,int hook,int count){song_=wizard_.createClassicRap(verse,hook,count);vocalPanel_.setStatus("Song structure updated: "+juce::String(static_cast<int>(song_.sections.size()))+" sections");};
+    vocalPanel_.onGenerate=[this](const juce::String& text,float energy){if(text.trim().isEmpty()){vocalPanel_.setStatus("Enter original lyrics first");return;}vocalPanel_.setStatus("Generating on worker thread...");workerPool_.addJob(new VocalGenerationJob(*this,text,energy),true);};
+    vocalPanel_.onRecord=[this]{startOrStopRecording();};
+    const auto models=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("models"); ai_.loadModels(models.getFullPathName().toStdString());
+    engine_.getTransport().setTempo(96.0); startTimerHz(20); setSize(1400,900);
 }
-
-MainComponent::~MainComponent()
-{
-    stopTimer();
-}
-
-void MainComponent::resized()
-{
-    auto bounds = getLocalBounds().reduced(8);
-
-    // Top: device selector gets most of the vertical space.
-    deviceSelector_.setBounds(bounds.removeFromTop(340));
-    bounds.removeFromTop(8);
-
-    // Transport row
-    auto row = bounds.removeFromTop(36);
-    playStopButton_.setBounds(row.removeFromLeft(80));
-    row.removeFromLeft(8);
-    tempoLabel_.setBounds(row.removeFromLeft(40));
-    tempoSlider_.setBounds(row.removeFromLeft(120));
-    row.removeFromLeft(8);
-    timeSigLabel_.setBounds(row.removeFromLeft(30));
-    numeratorBox_.setBounds(row.removeFromLeft(48));
-    dividerLabel_.setBounds(row.removeFromLeft(16));
-    denominatorBox_.setBounds(row.removeFromLeft(48));
-    row.removeFromLeft(8);
-    loopToggle_.setBounds(row.removeFromLeft(60));
-    row.removeFromLeft(8);
-    metronomeToggle_.setBounds(row.removeFromLeft(90));
-
-    // Vocal-track recording row (below the transport row)
-    bounds.removeFromTop(6);
-    auto recRow = bounds.removeFromTop(36);
-    armButton_.setBounds(recRow.removeFromLeft(60));
-    recRow.removeFromLeft(8);
-    monitorButton_.setBounds(recRow.removeFromLeft(80));
-    recRow.removeFromLeft(8);
-    recordButton_.setBounds(recRow.removeFromLeft(90));
-
-    // Info label
-    bounds.removeFromTop(8);
-    infoLabel_.setBounds(bounds.removeFromTop(28));
-}
-
-// ---- Timer (20 Hz) ----
-
-void MainComponent::timerCallback()
-{
-    // Keep the play/stop button label in sync with the true transport state
-    // (handles external stops such as device errors).
-    playStopButton_.setButtonText(
-        engine_.getTransport().isPlaying() ? "Stop" : "Play");
-
-    // Sync vocal-track buttons with actual state (state can change on the
-    // worker thread when the Stopping → Idle transition fires).
-    const auto vtState = engine_.getVocalTrack().getState();
-
-    armButton_.setToggleState(
-        vtState != VocalTrack::State::Idle,
-        juce::dontSendNotification);
-
-    monitorButton_.setToggleState(
-        vtState == VocalTrack::State::Monitoring,
-        juce::dontSendNotification);
-
-    if (vtState == VocalTrack::State::Recording ||
-        vtState == VocalTrack::State::Stopping)
-        recordButton_.setButtonText("Stop Rec");
-    else
-        recordButton_.setButtonText("Record");
-
-    updateInfoLabel();
-}
-
-void MainComponent::updateInfoLabel()
-{
-    const int    inCh    = engine_.getNumInputChannels();
-    const int    outCh   = engine_.getNumOutputChannels();
-    const double latMs   = engine_.getEstimatedLatencyMs();
-    const double bpm     = engine_.getTransport().getTempo();
-    const double sr      = engine_.getTransport().getSampleRate();
-    const int64_t posSamp = engine_.getTransport().getPositionInSamples();
-
-    const double posBeats = (bpm > 0.0 && sr > 0.0)
-                                ? Transport::samplesToBeats(posSamp, bpm, sr)
-                                : 0.0;
-
-    // Vocal-track state label
-    const auto vtState = engine_.getVocalTrack().getState();
-    juce::String vtLabel;
-    switch (vtState)
-    {
-        case VocalTrack::State::Idle:       vtLabel = "Idle";       break;
-        case VocalTrack::State::Armed:      vtLabel = "Armed";      break;
-        case VocalTrack::State::Monitoring: vtLabel = "Monitoring"; break;
-        case VocalTrack::State::Recording:  vtLabel = "REC";        break;
-        case VocalTrack::State::Stopping:   vtLabel = "Stopping";   break;
-        default:                            vtLabel = "?";           break;
-    }
-
-    juce::String info;
-    info << "In: "           << inCh  << " ch"
-         << "  |  Out: "     << outCh << " ch"
-         << "  |  Latency: " << juce::String(latMs,    1) << " ms"
-         << "  |  Pos: "     << juce::String(posBeats, 3) << " beats"
-         << "  |  "          << juce::String(bpm, 1)      << " BPM"
-         << "  |  Vocal: "   << vtLabel;
-
-    infoLabel_.setText(info, juce::dontSendNotification);
-}
-
+MainComponent::~MainComponent(){stopTimer();workerPool_.removeAllJobs(true,5000);}
+void MainComponent::acceptGeneratedVocal(std::vector<float> audio){lastGenerated_=std::move(audio);engine_.loadGeneratedVocal(lastGenerated_);if(!song_.sections.empty()){auto it=std::find_if(song_.sections.begin(),song_.sections.end(),[](const SongSection&s){return s.type==SectionType::Verse;});if(it!=song_.sections.end())it->audio=lastGenerated_;}vocalPanel_.setStatus(lastGenerated_.empty()?"Generation returned no audio":"Generated vocal ready; press Play");}
+void MainComponent::startOrStopRecording(){auto&v=engine_.getVocalTrack();const auto state=v.getState();if(state==VocalTrack::State::Recording||state==VocalTrack::State::Stopping)v.stopRecording();else{if(state==VocalTrack::State::Idle)v.arm();v.startRecording();}}
+void MainComponent::requestExport(){chooser_=std::make_unique<juce::FileChooser>("Export full song and stems",juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("sing-song-bing-bong.wav"),"*.wav");chooser_->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles,[this](const juce::FileChooser&fc){auto file=fc.getResult();if(file==juce::File{})return;if(file.getFileExtension().isEmpty())file=file.withFileExtension(".wav");std::array<std::array<bool,16>,3> p{};for(int l=0;l<3;++l)for(int s=0;s<16;++s)p[l][s]=engine_.getBeatEngine().getStep(l,s);vocalPanel_.setStatus("Exporting on worker thread...");workerPool_.addJob(new ExportJob(*this,file,song_,lastGenerated_,engine_.getTransport().getTempo(),p),true);});}
+void MainComponent::timerCallback(){const bool playing=engine_.getTransport().isPlaying();const auto state=engine_.getVocalTrack().getState();transportBar_.setPlaying(playing);transportBar_.setRecording(state==VocalTrack::State::Recording||state==VocalTrack::State::Stopping);}
+void MainComponent::paint(juce::Graphics&g){g.fillAll(juce::Colour(0xff10131b));}
+void MainComponent::resized(){auto r=getLocalBounds().reduced(8);transportBar_.setBounds(r.removeFromTop(54));r.removeFromTop(6);auto top=r.removeFromTop(std::min(430,r.getHeight()/2));const int third=top.getWidth()/3;wizardPanel_.setBounds(top.removeFromLeft(third).reduced(3));beatPanel_.setBounds(top.removeFromLeft(third).reduced(3));vocalPanel_.setBounds(top.reduced(3));r.removeFromTop(6);masteringPanel_.setBounds(r.removeFromTop(72));deviceHeading_.setBounds(r.removeFromTop(28));deviceSelector_.setBounds(r);}
 } // namespace ssbb

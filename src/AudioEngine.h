@@ -5,6 +5,11 @@
 #include "Transport.h"
 #include "Metronome.h"
 #include "VocalTrack.h"
+#include "pro/DSP/BeatEngine.h"
+#include "pro/DSP/VocalDSPChain.h"
+#include "pro/DSP/MasteringDSPChain.h"
+#include <vector>
+#include <array>
 
 namespace ssbb {
 
@@ -28,6 +33,11 @@ public:
     Transport&   getTransport()   noexcept { return transport_; }
     Metronome&   getMetronome()   noexcept { return metronome_; }
     VocalTrack&  getVocalTrack()  noexcept { return vocalTrack_; }
+    BeatEngine& getBeatEngine() noexcept { return beatEngine_; }
+    MasteringDSPChain& getMasteringChain() noexcept { return masteringChain_; }
+
+    /// Message-thread only. Replaces the generated vocal preview while transport is stopped.
+    void loadGeneratedVocal(const std::vector<float>& samples) noexcept;
 
     /// Number of active input channels reported at the last audioDeviceAboutToStart.
     int getNumInputChannels() const noexcept
@@ -66,6 +76,16 @@ private:
     Transport   transport_;
     Metronome   metronome_;
     VocalTrack  vocalTrack_;
+    BeatEngine beatEngine_;
+    VocalDSPChain vocalChain_;
+    MasteringDSPChain masteringChain_;
+
+    std::array<std::vector<float>, 3> generatedVocal_;
+    std::array<int, 3> generatedVocalLength_ { 0, 0, 0 };
+    std::atomic<int> activeGeneratedVocal_ { 0 };
+    std::atomic<int> audioReadingVocal_ { -1 };
+    int generatedVocalPosition_ = 0;
+    int lastGeneratedVocalSlot_ = -1;
 
     std::atomic<int>    numInputChannels_   { 0 };
     std::atomic<int>    numOutputChannels_  { 0 };
