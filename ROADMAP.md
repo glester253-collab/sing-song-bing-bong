@@ -12,10 +12,10 @@
 
 - [x] Audio/MIDI device selection (persistence across restarts)
 - [x] Transport, tempo, time signature, metronome, loop
-- [ ] Arm, monitor, record, stop, and play one mono track
+- [x] Arm, monitor, record, stop, and play one mono track
 - [x] Timestamped takes, autosave, and crash recovery
-- [ ] Waveform cache and non-destructive trim/move
-- [ ] WAV import and export
+- [x] Waveform cache and non-destructive trim/move
+- [x] WAV import and export
 
 ## Milestone 2 — Produce a beat
 
