@@ -327,4 +327,33 @@ bool SessionDocument::loadRecovery(const std::filesystem::path& sessionPath,
     return readJsonFromFile(recoveryPath(sessionPath), data);
 }
 
+bool SessionDocument::migrate(SessionData& data, int toVersion)
+{
+    // Downgrade is not supported.
+    if (data.version > toVersion)
+        return false;
+
+    // Apply each version migration step in sequence.
+    // Version 1 is the initial schema; nothing to transform from 0 → 1 in
+    // terms of data (the format simply didn't exist before).
+    //
+    // Future migrations follow this pattern:
+    //   if (data.version < 2) {
+    //       // transform data from v1 → v2 shape
+    //       data.version = 2;
+    //   }
+    //   if (data.version < 3) { ... }
+    //
+    // Keep each step idempotent: running migrate() twice must be safe.
+
+    if (data.version < 1)
+        data.version = 1;   // normalise pre-versioned documents
+
+    // All future steps will be added here.  For now, version 1 is current.
+    // Any version beyond kSchemaVersion is rejected (already handled above
+    // because data.version > toVersion when toVersion == kSchemaVersion).
+
+    return data.version == toVersion;
+}
+
 } // namespace ssbb

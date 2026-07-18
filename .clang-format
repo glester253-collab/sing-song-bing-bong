@@ -1,0 +1,93 @@
+---
+# Sing Song Bing Bong — clang-format 16+
+# Based on Google style with project-specific overrides.
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++20
+
+# Indentation
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+ConstructorInitializerIndentWidth: 4
+NamespaceIndentation: None
+IndentCaseLabels: true
+IndentPPDirectives: AfterHash
+
+# Column limit — keep lines readable without horizontal scrolling.
+ColumnLimit: 100
+
+# Braces — Allman style for functions/classes, attach for control flow.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel:        false
+  AfterClass:            true
+  AfterControlStatement: Never
+  AfterEnum:             true
+  AfterFunction:         true
+  AfterNamespace:        false
+  AfterStruct:           true
+  AfterUnion:            true
+  BeforeCatch:           false
+  BeforeElse:            false
+  IndentBraces:          false
+  SplitEmptyFunction:    false
+  SplitEmptyRecord:      false
+  SplitEmptyNamespace:   false
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments:
+  Enabled:         true
+  AcrossEmptyLines: false
+  AcrossComments:  false
+AlignConsecutiveDeclarations:
+  Enabled:         false
+AlignTrailingComments:
+  Kind:            Always
+  OverEmptyLines:  1
+AlignOperands:   Align
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpaceAfterCStyleCast: false
+SpacesBeforeTrailingComments: 3
+
+# Includes
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # JUCE headers
+  - Regex:    "^<juce_"
+    Priority: 10
+  # Standard library
+  - Regex:    "^<"
+    Priority: 20
+  # Local project headers
+  - Regex:    "^\""
+    Priority: 30
+
+# Pointers & references: right-aligned (int* p, not int *p)
+DerivePointerAlignment: false
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# Short blocks
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: All
+
+# Breaking
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakBeforeTernaryOperators: true
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# Penalties (tune to prefer readability over compactness)
+PenaltyBreakBeforeFirstCallParameter: 100
+PenaltyReturnTypeOnItsOwnLine: 500

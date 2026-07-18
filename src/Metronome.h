@@ -21,6 +21,17 @@ public:
     void setEnabled(bool enabled) noexcept { enabled_.store(enabled, std::memory_order_relaxed); }
     bool isEnabled() const noexcept        { return enabled_.load(std::memory_order_relaxed); }
 
+    /// Click output level (linear gain, 0.0–1.0, default 1.0).
+    /// Safe to call from any thread.
+    void setLevel(float level) noexcept
+    {
+        level_.store(level, std::memory_order_relaxed);
+    }
+    float getLevel() const noexcept
+    {
+        return level_.load(std::memory_order_relaxed);
+    }
+
     /// Audio thread: mix metronome clicks into output[0..numSamples-1].
     /// blockStartSamples is the transport position at the *start* of the block
     /// (i.e. before transport.process() advanced the position for this block).
@@ -40,7 +51,8 @@ private:
     int    clickPhase_      { -1 };   // -1 = idle
     bool   accented_        { false };
 
-    std::atomic<bool> enabled_ { false };
+    std::atomic<bool>  enabled_ { false };
+    std::atomic<float> level_   { 1.0f };
 };
 
 } // namespace ssbb

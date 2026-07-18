@@ -66,6 +66,21 @@ public:
     /// Schema version this code reads/writes.
     static constexpr int kSchemaVersion = 1;
 
+    /// Migrate `data` in-place from its current `data.version` to `toVersion`.
+    ///
+    /// Rules:
+    ///  - If `data.version == toVersion` the function is a no-op and returns true.
+    ///  - If `data.version > toVersion` (downgrade) the function returns false —
+    ///    older code cannot safely interpret a newer session.
+    ///  - Each version step is applied in order so a single call always brings
+    ///    the data up to date regardless of how many versions behind it is.
+    ///  - `toVersion` defaults to `kSchemaVersion` (current).
+    ///
+    /// Returns false only when downgrade is requested or an unknown version is
+    /// encountered; true otherwise (including the no-op case).
+    static bool migrate(SessionData& data,
+                        int          toVersion = kSchemaVersion);
+
 private:
     SessionDocument() = delete;
 };

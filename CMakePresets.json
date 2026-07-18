@@ -7,6 +7,26 @@
   },
   "configurePresets": [
     {
+      "name": "linux-sanitize",
+      "displayName": "Linux sanitizers (ASAN + UBSAN)",
+      "description": "Address and undefined-behaviour sanitizers; tests only (no standalone app).",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-sanitize",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "BUILD_TESTING": "ON",
+        "SSBB_BUILD_STANDALONE_APP": "OFF",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
       "name": "windows-msvc",
       "displayName": "Windows MSVC",
       "description": "Configure the Windows standalone bootstrap build with MSVC and Ninja Multi-Config.",
@@ -25,6 +45,11 @@
   ],
   "buildPresets": [
     {
+      "name": "linux-sanitize-build",
+      "displayName": "Linux sanitizers build",
+      "configurePreset": "linux-sanitize"
+    },
+    {
       "name": "windows-debug",
       "displayName": "Windows Debug",
       "configurePreset": "windows-msvc",
@@ -32,6 +57,18 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "linux-sanitize-test",
+      "displayName": "Linux sanitizer tests",
+      "configurePreset": "linux-sanitize",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:abort_on_error=1"
+      }
+    },
     {
       "name": "windows-test-debug",
       "displayName": "Windows tests (Debug)",
