@@ -4,18 +4,18 @@
 
 - [x] Pin JUCE after license review and create the CMake project
 - [x] Add Windows CI configure/build/test
-- [ ] Add coding, formatting, sanitizer, and release conventions
-- [ ] Create the session schema and migration strategy
+- [x] Add coding, formatting, sanitizer, and release conventions
+- [x] Create the session schema and migration strategy
 - [ ] Create audio-device diagnostics and a latency test
 
 ## Milestone 1 — Record a vocal safely
 
-- [ ] Audio/MIDI device selection
-- [ ] Transport, tempo, time signature, metronome, loop
-- [ ] Arm, monitor, record, stop, and play one mono track
-- [ ] Timestamped takes, autosave, and crash recovery
-- [ ] Waveform cache and non-destructive trim/move
-- [ ] WAV import and export
+- [x] Audio/MIDI device selection (persistence across restarts)
+- [x] Transport, tempo, time signature, metronome, loop
+- [x] Arm, monitor, record, stop, and play one mono track
+- [x] Timestamped takes, autosave, and crash recovery
+- [x] Waveform cache and non-destructive trim/move
+- [x] WAV import and export
 
 ## Milestone 2 — Produce a beat
 

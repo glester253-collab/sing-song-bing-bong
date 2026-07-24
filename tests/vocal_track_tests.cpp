@@ -17,6 +17,10 @@
 #include "TakeManager.h"
 #include "SessionDocument.h"
 #include "WaveformCache.h"
+#include "WavReader.h"
+#include "WavWriter.h"
+#include "CommandHistory.h"
+#include "ClipPlayer.h"
 
 #include <cmath>
 #include <cstdint>
@@ -447,6 +451,203 @@ int main()
         expect(!wc.isReady(),
                "WaveformCache: isReady() false after buildFromFile on missing path",
                success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. SessionDocument::migrate()
+    // -------------------------------------------------------------------------
+    {
+        // Already at current version: no-op, returns true.
+        ssbb::SessionData d;
+        d.version = ssbb::SessionDocument::kSchemaVersion;
+        const bool ok1 = ssbb::SessionDocument::migrate(d);
+        expect(ok1,
+               "SessionDocument::migrate: current version → true (no-op)", success);
+        expect(d.version == ssbb::SessionDocument::kSchemaVersion,
+               "SessionDocument::migrate: version unchanged after no-op", success);
+
+        // Version 0 (pre-schema): should normalise to 1.
+        ssbb::SessionData d0;
+        d0.version = 0;
+        const bool ok0 = ssbb::SessionDocument::migrate(d0, 1);
+        expect(ok0,
+               "SessionDocument::migrate: version 0 → 1 succeeds", success);
+        expect(d0.version == 1,
+               "SessionDocument::migrate: version is 1 after 0→1 migration", success);
+
+        // Downgrade: should fail.
+        ssbb::SessionData dNew;
+        dNew.version = 99;
+        const bool okDown = ssbb::SessionDocument::migrate(dNew, 1);
+        expect(!okDown,
+               "SessionDocument::migrate: downgrade (99→1) returns false", success);
+        expect(dNew.version == 99,
+               "SessionDocument::migrate: version unchanged after failed downgrade",
+               success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. WavReader — round-trip with WavWriter (IEEE float-32)
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_wav_reader");
+        const auto wavPath = tmp.path / "roundtrip.wav";
+
+        // Write known samples via WavWriter.
+        constexpr int kFrames = 128;
+        float written[kFrames];
+        for (int i = 0; i < kFrames; ++i)
+            written[i] = static_cast<float>(i) / static_cast<float>(kFrames);
+
+        {
+            ssbb::WavWriter w;
+            const bool opened = w.open(wavPath, 44100.0, 1);
+            expect(opened, "WavWriter: open for round-trip test", success);
+            w.write(written, kFrames);
+            w.close();
+        }
+
+        // Read back via WavReader.
+        ssbb::WavReader reader;
+        expect(!reader.isLoaded(),
+               "WavReader: not loaded before load()", success);
+
+        const bool loaded = reader.load(wavPath);
+        expect(loaded,
+               "WavReader: load() returns true for valid float-32 WAV", success);
+        expect(reader.isLoaded(),
+               "WavReader: isLoaded() true after load()", success);
+        expect(reader.numFrames() == kFrames,
+               "WavReader: numFrames matches written count", success);
+        expect(reader.numChannels() == 1,
+               "WavReader: numChannels == 1", success);
+        expect(reader.sampleRate() == 44100.0,
+               "WavReader: sampleRate == 44100", success);
+
+        // Read samples back and verify values.
+        bool samplesMatch = true;
+        for (int i = 0; i < kFrames; ++i)
+        {
+            float out = -1.0f;
+            reader.read(static_cast<int64_t>(i), 1, &out, 1);
+            if (std::abs(out - written[i]) > 1e-6f)
+            {
+                samplesMatch = false;
+                break;
+            }
+        }
+        expect(samplesMatch,
+               "WavReader: round-trip sample values match WavWriter output", success);
+
+        // Out-of-range reads must return silence, not crash.
+        float silentSample = 99.0f;
+        reader.read(-1, 1, &silentSample, 1);
+        expect(silentSample == 0.0f,
+               "WavReader: read before frame 0 returns silence", success);
+
+        float silentSample2 = 99.0f;
+        reader.read(kFrames + 10, 1, &silentSample2, 1);
+        expect(silentSample2 == 0.0f,
+               "WavReader: read past EOF returns silence", success);
+
+        // Missing file must not crash and must leave isLoaded() false.
+        ssbb::WavReader bad;
+        const bool badLoad = bad.load(tmp.path / "nonexistent.wav");
+        expect(!badLoad,      "WavReader: load() false for missing file", success);
+        expect(!bad.isLoaded(),"WavReader: isLoaded() false for missing file", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. CommandHistory — execute / undo / redo
+    // -------------------------------------------------------------------------
+    {
+        int value = 0;
+
+        ssbb::CommandHistory hist;
+        expect(!hist.canUndo(), "CommandHistory: canUndo() false initially", success);
+        expect(!hist.canRedo(), "CommandHistory: canRedo() false initially", success);
+
+        // Execute command: value → 1.
+        hist.execute("Set to 1",
+                     [&]{ value = 1; },
+                     [&]{ value = 0; });
+        expect(value == 1,        "CommandHistory: execute runs doFn", success);
+        expect(hist.canUndo(),    "CommandHistory: canUndo after execute", success);
+        expect(!hist.canRedo(),   "CommandHistory: canRedo false after execute", success);
+        expect(hist.undoName() == "Set to 1",
+               "CommandHistory: undoName matches last command", success);
+
+        // Undo: back to 0.
+        const bool undid = hist.undo();
+        expect(undid,          "CommandHistory: undo() returns true", success);
+        expect(value == 0,     "CommandHistory: undo restores value to 0", success);
+        expect(!hist.canUndo(),"CommandHistory: canUndo false after undo", success);
+        expect(hist.canRedo(), "CommandHistory: canRedo true after undo", success);
+
+        // Redo: back to 1.
+        const bool redid = hist.redo();
+        expect(redid,         "CommandHistory: redo() returns true", success);
+        expect(value == 1,    "CommandHistory: redo re-applies command", success);
+        expect(hist.canUndo(),"CommandHistory: canUndo true after redo", success);
+
+        // Branching: new execute clears redo stack.
+        hist.undo();                // value = 0
+        hist.execute("Set to 2",
+                     [&]{ value = 2; },
+                     [&]{ value = 0; });
+        expect(value == 2,        "CommandHistory: execute after undo", success);
+        expect(!hist.canRedo(),   "CommandHistory: redo cleared after new execute", success);
+
+        // Double-undo.
+        hist.undo();               // value = 0 (undo "Set to 2")
+        expect(value == 0,        "CommandHistory: first undo of two", success);
+        expect(!hist.canUndo(),   "CommandHistory: no more undo after clearing", success);
+
+        // clear() resets everything.
+        hist.clear();
+        expect(!hist.canUndo(), "CommandHistory: canUndo false after clear()", success);
+        expect(!hist.canRedo(), "CommandHistory: canRedo false after clear()", success);
+        expect(hist.size() == 0,"CommandHistory: size 0 after clear()", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. ClipPlayer — slot management (no audio device needed)
+    // -------------------------------------------------------------------------
+    {
+        ssbb::ClipPlayer cp;
+
+        // Initial state: addClip returns a valid index.
+        ssbb::Clip clip;
+        clip.takePath            = "/tmp/fake.wav";
+        clip.offsetSamples       = 0;
+        clip.trimStartSamples    = 0;
+        clip.trimEndSamples      = 0;
+        clip.sourceLengthSamples = 44100;
+
+        const int idx = cp.addClip(clip);
+        expect(idx >= 0,
+               "ClipPlayer: addClip returns valid slot index", success);
+
+        // Attempting to load a non-existent file must return false gracefully.
+        const bool loadOk = cp.loadClip(idx);
+        expect(!loadOk,
+               "ClipPlayer: loadClip returns false for missing WAV", success);
+
+        // clearClips resets all slots.
+        cp.clearClips();
+        // After clear, the same slot can be reused.
+        const int idx2 = cp.addClip(clip);
+        expect(idx2 >= 0,
+               "ClipPlayer: addClip after clearClips gives valid slot", success);
+
+        // Fill all 32 slots.
+        ssbb::ClipPlayer cp2;
+        for (int i = 0; i < static_cast<int>(ssbb::ClipPlayer::kMaxClips); ++i)
+            cp2.addClip(clip);
+
+        const int overflow = cp2.addClip(clip);
+        expect(overflow == -1,
+               "ClipPlayer: addClip returns -1 when all slots full", success);
     }
 
     // =========================================================================

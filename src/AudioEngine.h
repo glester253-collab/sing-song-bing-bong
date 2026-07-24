@@ -5,11 +5,12 @@
 #include "Transport.h"
 #include "Metronome.h"
 #include "VocalTrack.h"
+#include "ClipPlayer.h"
 
 namespace ssbb {
 
 /// AudioEngine owns the JUCE AudioDeviceManager and bridges it to our
-/// lock-free Transport, Metronome, and VocalTrack.
+/// lock-free Transport, Metronome, VocalTrack, and ClipPlayer.
 ///
 /// Ownership model:
 ///   - AudioEngine is created on the message thread before MainWindow.
@@ -17,7 +18,7 @@ namespace ssbb {
 ///   - All public getters are safe to call from any thread — audio-thread-
 ///     visible state is protected by atomics.
 ///   - A worker thread runs continuously to drain the VocalTrack ring buffer
-///     to disk.  It is started in the constructor and joined in the destructor.
+///     to disk and to load clip audio into the ClipPlayer.
 class AudioEngine final : public juce::AudioIODeviceCallback
 {
 public:
@@ -28,6 +29,7 @@ public:
     Transport&   getTransport()   noexcept { return transport_; }
     Metronome&   getMetronome()   noexcept { return metronome_; }
     VocalTrack&  getVocalTrack()  noexcept { return vocalTrack_; }
+    ClipPlayer&  getClipPlayer()  noexcept { return clipPlayer_; }
 
     /// Number of active input channels reported at the last audioDeviceAboutToStart.
     int getNumInputChannels() const noexcept
@@ -66,6 +68,7 @@ private:
     Transport   transport_;
     Metronome   metronome_;
     VocalTrack  vocalTrack_;
+    ClipPlayer  clipPlayer_;
 
     std::atomic<int>    numInputChannels_   { 0 };
     std::atomic<int>    numOutputChannels_  { 0 };

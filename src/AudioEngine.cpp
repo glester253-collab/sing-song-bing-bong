@@ -130,7 +130,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
                               outputChannelData, numOutputChannels,
                               numSamples);
 
-    // 6. Copy channel 0 (now contains metronome + vocal monitor) to all
+    // 6. ClipPlayer: mix pre-loaded take audio from the active clips.
+    //    All audio is in RAM (loaded by the worker thread) — no file I/O here.
+    clipPlayer_.processBlock(outputChannelData, numOutputChannels,
+                              numSamples, blockStart);
+
+    // 7. Copy channel 0 (now contains metronome + vocal monitor + clips) to all
     //    additional output channels.
     if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
     {

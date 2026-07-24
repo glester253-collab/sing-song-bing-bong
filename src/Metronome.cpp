@@ -72,6 +72,10 @@ void Metronome::processBlock(float* output, int numSamples,
     if (!enabled_.load(std::memory_order_relaxed))
         return;
 
+    const float level = level_.load(std::memory_order_relaxed);
+    if (level <= 0.0f)
+        return;
+
     if (!transport.isPlaying())
         return;
 
@@ -142,7 +146,7 @@ void Metronome::processBlock(float* output, int numSamples,
         }
 
         // Mix (not assign) so future audio tracks can be summed into the same buffer.
-        output[i] += nextSample();
+        output[i] += nextSample() * level;
     }
 }
 
