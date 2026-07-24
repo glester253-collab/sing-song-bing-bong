@@ -472,7 +472,7 @@ void MainComponent::checkForRecovery()
         .withButton("Cancel")
         .withAssociatedComponent(this);
 
-    juce::AlertWindow::showYesNoCancelBox(
+    juce::AlertWindow::showAsync(
         opts,
         [this, recovered = std::move(recovered)](int choice)
         {
