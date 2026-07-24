@@ -462,33 +462,36 @@ void MainComponent::checkForRecovery()
     if (recovered.takes.empty() && recovered.clips.empty())
         return;
 
-    const int choice = juce::AlertWindow::showYesNoCancelBox(
-        juce::AlertWindow::WarningIcon,
-        "Recover Session?",
-        "A recovery file was found from a previous run.\n"
-        "Would you like to restore it?",
-        "Restore",
-        "Discard",
-        "Cancel",
-        this);
+    const auto opts = juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::WarningIcon)
+        .withTitle("Recover Session?")
+        .withMessage("A recovery file was found from a previous run.\n"
+                     "Would you like to restore it?")
+        .withButton("Restore")
+        .withButton("Discard")
+        .withButton("Cancel")
+        .withAssociatedComponent(this);
 
-    if (choice == 1)   // Restore
-    {
-        sessionData_ = recovered;
-        // The recovered takes/clips would be wired into ClipPlayer here
-        // once the session loading pipeline is complete.
-    }
-    else if (choice == 2)   // Discard
-    {
-        // Remove the stale recovery file.
-        juce::File rf(sessionFile_.getFullPathName() + ".recovery.json");
-        // The actual recovery path uses stem + ".recovery.json":
-        const auto rfPath = sessionFile_.getParentDirectory()
-                                .getChildFile(sessionFile_.getFileNameWithoutExtension()
-                                             + ".recovery.json");
-        rfPath.deleteFile();
-    }
-    // choice == 0 (Cancel) → leave file in place, do nothing.
+    juce::AlertWindow::showYesNoCancelBox(
+        opts,
+        [this, recovered = std::move(recovered)](int choice)
+        {
+            if (choice == 1)   // Restore
+            {
+                sessionData_ = recovered;
+                // The recovered takes/clips would be wired into ClipPlayer here
+                // once the session loading pipeline is complete.
+            }
+            else if (choice == 2)   // Discard
+            {
+                // Remove the stale recovery file.
+                const auto rfPath = sessionFile_.getParentDirectory()
+                                        .getChildFile(sessionFile_.getFileNameWithoutExtension()
+                                                     + ".recovery.json");
+                rfPath.deleteFile();
+            }
+            // choice == 0 (Cancel) → leave file in place, do nothing.
+        });
 }
 
 // ---- WAV import / export ------------------------------------------------
