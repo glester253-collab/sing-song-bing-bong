@@ -10,7 +10,7 @@ namespace {
 std::filesystem::path toPath(const juce::File& file)
 {
 #if defined(_WIN32)
-    return std::filesystem::path(file.getFullPathName().toStdWString());
+    return std::filesystem::path(file.getFullPathName().toWideCharPointer());
 #else
     return std::filesystem::path(file.getFullPathName().toStdString());
 #endif
