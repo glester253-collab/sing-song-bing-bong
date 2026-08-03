@@ -17,7 +17,7 @@ The project takes inspiration from broad West Coast production qualities—confi
 
 ## Current status
 
-Foundation and architecture stage. The repository now includes:
+Milestone 1 vocal workflow complete. The repository now includes:
 
 - [Architecture](ARCHITECTURE.md)
 - [Roadmap](ROADMAP.md)
@@ -25,8 +25,13 @@ Foundation and architecture stage. The repository now includes:
 - a repository-level Studio Architect agent under `.github/agents/`
 - GitHub Copilot repository instructions under `.github/copilot-instructions.md`
 - a pinned JUCE/CMake bootstrap for the first Windows standalone app target and CI workflow
+- safe mono recording and latest-take playback
+- a waveform timeline with non-destructive trim and move controls
+- owned/licensed WAV import confirmation and WAV export
+- timed session autosave and crash recovery
 
-The first engineering milestone is a safe Windows desktop prototype that records and plays back one vocal track using C++20, JUCE, and CMake.
+The next engineering milestone adds beat production: velocity-sensitive pads,
+an owned/licensed sample browser, step sequencing, MIDI capture, and synthesis.
 
 ## Build bootstrap
 
@@ -49,8 +54,9 @@ ctest --preset windows-test-debug --output-on-failure
 ```
 
 The Windows standalone target provides audio-device selection, transport,
-metronome, safe mono vocal recording, and playback of the latest completed
-take. Use **Rewind** to return to the start before pressing **Play**.
+metronome, safe mono vocal recording/playback, a waveform editor, WAV
+import/export, autosave, and recovery. Use **Rewind** to return to the start
+before pressing **Play**. Imported audio must be owned or licensed for use.
 
 ## Working with the agent
 

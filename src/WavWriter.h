@@ -16,8 +16,10 @@
 
 #include <cstdint>
 #include <cstring>     // std::memcpy
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 
 namespace ssbb {
 
@@ -37,6 +39,7 @@ public:
         , sampleRate_(o.sampleRate_)
         , dataBytes_(o.dataBytes_)
         , isOpen_(o.isOpen_)
+        , failed_(o.failed_)
     {
         o.isOpen_ = false;
     }
@@ -53,31 +56,57 @@ public:
     {
         if (isOpen_) close();
 
+        if (path.empty() || !std::isfinite(sampleRate) || sampleRate <= 0.0 ||
+            sampleRate > static_cast<double>(std::numeric_limits<uint32_t>::max()) ||
+            numChannels <= 0 || numChannels > 2)
+            return false;
+
         file_.open(path, std::ios::binary | std::ios::trunc);
         if (!file_.is_open()) return false;
 
         numChannels_ = numChannels;
         sampleRate_  = static_cast<uint32_t>(sampleRate);
         dataBytes_   = 0;
+        failed_      = false;
         isOpen_      = true;
 
         writeHeader();
-        return file_.good();
+        if (!file_.good())
+        {
+            failed_ = true;
+            close();
+            return false;
+        }
+        return true;
     }
 
     /// Write interleaved float samples.
     /// numSamples is the total sample count across all channels
     /// (e.g. 512 frames * 1 ch = 512 samples).
     /// Must NOT be called from the audio thread.
-    void write(const float* samples, int numSamples) noexcept
+    bool write(const float* samples, int numSamples) noexcept
     {
-        if (!isOpen_ || numSamples <= 0) return;
+        if (!isOpen_ || samples == nullptr || numSamples <= 0) return false;
+
+        const uint64_t bytes = static_cast<uint64_t>(sizeof(float))
+                               * static_cast<uint64_t>(numSamples);
+        if (bytes > UINT32_MAX - dataBytes_)
+        {
+            failed_ = true;
+            return false;
+        }
 
         file_.write(reinterpret_cast<const char*>(samples),
-                    static_cast<std::streamsize>(sizeof(float)) * numSamples);
+                    static_cast<std::streamsize>(bytes));
 
-        dataBytes_ += static_cast<uint32_t>(sizeof(float))
-                      * static_cast<uint32_t>(numSamples);
+        if (!file_.good())
+        {
+            failed_ = true;
+            return false;
+        }
+
+        dataBytes_ += static_cast<uint32_t>(bytes);
+        return true;
     }
 
     /// Finalize the file: seek back and update RIFF/data chunk sizes, flush.
@@ -98,12 +127,15 @@ public:
         writeLE32(dataBytes_);
 
         file_.flush();
+        if (!file_.good())
+            failed_ = true;
         file_.close();
         isOpen_    = false;
         dataBytes_ = 0;
     }
 
     bool isOpen() const noexcept { return isOpen_; }
+    bool hasError() const noexcept { return failed_; }
 
     /// Total number of bytes written to the data chunk so far.
     uint32_t dataBytesWritten() const noexcept { return dataBytes_; }
@@ -172,6 +204,7 @@ private:
     uint32_t sampleRate_  { 44100u };
     uint32_t dataBytes_   { 0u };
     bool     isOpen_      { false };
+    bool     failed_      { false };
 };
 
 } // namespace ssbb

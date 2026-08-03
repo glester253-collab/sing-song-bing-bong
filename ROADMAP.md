@@ -13,9 +13,9 @@
 - [x] Audio device selection (MIDI selection remains with Milestone 2)
 - [x] Transport, tempo, time signature, metronome, loop
 - [x] Arm, monitor, record, stop, and play one mono track
-- [ ] Timestamped takes and recovery metadata (timed autosave remains)
-- [ ] Waveform cache and non-destructive trim/move data model (timeline UI remains)
-- [ ] WAV import and export
+- [x] Timestamped takes, timed autosave, and crash-recovery metadata
+- [x] Waveform timeline and non-destructive trim/move controls
+- [x] WAV import and export with an audio-rights confirmation gate
 
 ## Milestone 2 — Produce a beat
 

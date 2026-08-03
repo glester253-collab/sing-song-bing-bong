@@ -247,7 +247,13 @@ bool parseSession(const std::string& json, SessionData& data)
 
 bool writeJsonToFile(const std::filesystem::path& path, const SessionData& data)
 {
-    std::ofstream f(path, std::ios::trunc);
+    std::error_code ec;
+    if (!path.parent_path().empty())
+        std::filesystem::create_directories(path.parent_path(), ec);
+
+    const auto tempPath = path.string() + ".tmp";
+    const auto backupPath = path.string() + ".bak";
+    std::ofstream f(tempPath, std::ios::trunc);
     if (!f.is_open()) return false;
 
     f << "{\n"
@@ -274,13 +280,48 @@ bool writeJsonToFile(const std::filesystem::path& path, const SessionData& data)
     f << "  ]\n"
       << "}\n";
 
-    return f.good();
+    f.flush();
+    const bool wrote = f.good();
+    f.close();
+    if (!wrote)
+        return false;
+
+    ec.clear();
+    if (!std::filesystem::exists(path, ec))
+    {
+        ec.clear();
+        std::filesystem::rename(tempPath, path, ec);
+        return !ec;
+    }
+
+    std::filesystem::remove(backupPath, ec);
+    ec.clear();
+    std::filesystem::rename(path, backupPath, ec);
+    if (ec)
+        return false;
+
+    ec.clear();
+    std::filesystem::rename(tempPath, path, ec);
+    if (ec)
+    {
+        std::error_code restoreError;
+        std::filesystem::rename(backupPath, path, restoreError);
+        return false;
+    }
+
+    std::filesystem::remove(backupPath, ec);
+    return true;
 }
 
 bool readJsonFromFile(const std::filesystem::path& path, SessionData& data)
 {
     std::ifstream f(path);
-    if (!f.is_open()) return false;
+    if (!f.is_open())
+    {
+        f.clear();
+        f.open(path.string() + ".bak");
+        if (!f.is_open()) return false;
+    }
 
     std::string json;
     json.assign(std::istreambuf_iterator<char>(f),
