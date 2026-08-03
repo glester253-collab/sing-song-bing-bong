@@ -38,6 +38,12 @@ MainComponent::MainComponent(AudioEngine& engine)
         }
     };
 
+    addAndMakeVisible(rewindButton_);
+    rewindButton_.onClick = [this]
+    {
+        engine_.getTransport().setPositionInBeats(0.0);
+    };
+
     // ---- Tempo ----
     tempoLabel_.setText("BPM", juce::dontSendNotification);
     tempoLabel_.setJustificationType(juce::Justification::centredRight);
@@ -176,6 +182,8 @@ void MainComponent::resized()
     auto row = bounds.removeFromTop(36);
     playStopButton_.setBounds(row.removeFromLeft(80));
     row.removeFromLeft(8);
+    rewindButton_.setBounds(row.removeFromLeft(72));
+    row.removeFromLeft(8);
     tempoLabel_.setBounds(row.removeFromLeft(40));
     tempoSlider_.setBounds(row.removeFromLeft(120));
     row.removeFromLeft(8);
@@ -265,6 +273,11 @@ void MainComponent::updateInfoLabel()
          << "  |  Pos: "     << juce::String(posBeats, 3) << " beats"
          << "  |  "          << juce::String(bpm, 1)      << " BPM"
          << "  |  Vocal: "   << vtLabel;
+
+    if (engine_.getVocalTrack().hasRecordingError())
+        info << "  |  Recording/playback error";
+    else if (engine_.getVocalTrack().hasPlayback())
+        info << "  |  Latest take ready";
 
     infoLabel_.setText(info, juce::dontSendNotification);
 }

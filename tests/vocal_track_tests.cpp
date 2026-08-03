@@ -17,12 +17,16 @@
 #include "TakeManager.h"
 #include "SessionDocument.h"
 #include "WaveformCache.h"
+#include "PlaybackBuffer.h"
+#include "WavWriter.h"
+#include "VocalTrack.h"
 
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -447,6 +451,99 @@ int main()
         expect(!wc.isReady(),
                "WaveformCache: isReady() false after buildFromFile on missing path",
                success);
+    }
+
+    // =========================================================================
+    // 6. PlaybackBuffer - load and render a completed take
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_playback");
+        const auto path = tmp / "take.wav";
+
+        ssbb::WavWriter writer;
+        expect(writer.open(path, 48000.0, 1),
+               "PlaybackBuffer: test WAV opens", success);
+        const float source[4] = { 0.1f, -0.2f, 0.3f, -0.4f };
+        writer.write(source, 4);
+        writer.close();
+
+        ssbb::PlaybackBuffer playback;
+        expect(playback.load(path), "PlaybackBuffer: loads recorded float WAV", success);
+        expect(playback.isReady(), "PlaybackBuffer: ready after load", success);
+        expect(playback.numFrames() == 4, "PlaybackBuffer: frame count", success);
+
+        float left[4] = {};
+        float right[4] = {};
+        float* outputs[2] = { left, right };
+        playback.render(outputs, 2, 4, 0, 48000.0);
+        for (int i = 0; i < 4; ++i)
+        {
+            expect(left[i] == source[i], "PlaybackBuffer: left sample matches", success);
+            expect(right[i] == source[i], "PlaybackBuffer: mono duplicates to right", success);
+        }
+
+        float mismatch[4] = {};
+        float* mismatchOut[1] = { mismatch };
+        playback.render(mismatchOut, 1, 4, 0, 44100.0);
+        expect(mismatch[0] == 0.0f && mismatch[3] == 0.0f,
+               "PlaybackBuffer: sample-rate mismatch fails silent", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. VocalTrack - completed recording becomes playable
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_vocal_playback");
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(tmp.path);
+        track->arm();
+        track->startRecording();
+
+        const float input[4] = { 0.25f, 0.5f, -0.25f, -0.5f };
+        const float* inputs[1] = { input };
+        float monitor[4] = {};
+        float* monitorOutputs[1] = { monitor };
+        track->processBlock(inputs, 1, monitorOutputs, 1, 4, 0, false);
+        track->stopRecording();
+        track->drainToFile();
+
+        expect(track->getState() == ssbb::VocalTrack::State::Idle,
+               "VocalTrack: returns to Idle after drain", success);
+        expect(track->hasPlayback(),
+               "VocalTrack: completed take is available for playback", success);
+
+        float playbackOut[4] = {};
+        float* playbackOutputs[1] = { playbackOut };
+        track->processBlock(nullptr, 0, playbackOutputs, 1, 4, 0, true);
+        for (int i = 0; i < 4; ++i)
+            expect(playbackOut[i] == input[i],
+                   "VocalTrack: latest take plays from transport zero", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. VocalTrack - file-open failure never enters Recording
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_record_open_failure");
+        const auto blocker = tmp / "not_a_directory";
+        {
+            std::ofstream file(blocker);
+            file << "block directory creation";
+        }
+
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(blocker);
+        track->arm();
+        track->startRecording();
+
+        expect(track->getState() == ssbb::VocalTrack::State::Armed,
+               "VocalTrack: failed file open leaves track Armed", success);
+        expect(track->hasRecordingError(),
+               "VocalTrack: failed file open exposes an error", success);
+        expect(track->getTakeManager().takes().empty(),
+               "VocalTrack: failed file open is not stored as a take", success);
     }
 
     // =========================================================================

@@ -45,6 +45,10 @@ public:
     /// All takes reserved so far (in reservation order).
     const std::vector<TakeMetadata>& takes() const noexcept { return takes_; }
 
+    /// Remove the most recent reservation when its file could not be opened.
+    /// Does not delete anything from disk.
+    void discardLastReservation(const std::filesystem::path& path) noexcept;
+
     /// Remove all in-memory take records (does not delete files on disk).
     void clearRecords() noexcept { takes_.clear(); reserved_.clear(); }
 

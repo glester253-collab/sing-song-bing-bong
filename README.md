@@ -48,7 +48,9 @@ cmake --build --preset windows-debug --parallel
 ctest --preset windows-test-debug --output-on-failure
 ```
 
-The Windows standalone target intentionally opens a blank native JUCE window and does not start audio devices in this bootstrap milestone.
+The Windows standalone target provides audio-device selection, transport,
+metronome, safe mono vocal recording, and playback of the latest completed
+take. Use **Rewind** to return to the start before pressing **Play**.
 
 ## Working with the agent
 

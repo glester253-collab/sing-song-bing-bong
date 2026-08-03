@@ -83,7 +83,7 @@ void VocalTrack::setTakeDirectory(const std::filesystem::path& dir)
     // (ec is intentionally ignored — failure will surface when opening the file)
 }
 
-void VocalTrack::openNewTake()
+bool VocalTrack::openNewTake()
 {
     const double sr = sampleRate_.load(std::memory_order_relaxed);
 
@@ -94,7 +94,18 @@ void VocalTrack::openNewTake()
         wavWriter_.close();
 
     const auto path = takeManager_.createTakePath(takeDir_, sr, /*numChannels=*/1);
-    wavWriter_.open(path, sr, /*numChannels=*/1);
+    if (path.empty() || !wavWriter_.open(path, sr, /*numChannels=*/1))
+    {
+        if (!path.empty())
+            takeManager_.discardLastReservation(path);
+        currentTakePath_.clear();
+        recordingError_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    currentTakePath_ = path;
+    recordingError_.store(false, std::memory_order_release);
+    return true;
 }
 
 void VocalTrack::startRecording()
@@ -105,7 +116,8 @@ void VocalTrack::startRecording()
         cur != static_cast<int>(State::Monitoring))
         return;
 
-    openNewTake();
+    if (!openNewTake())
+        return;
 
     // Transition to Recording: the audio thread will start writing to the
     // ring buffer once it observes this store.
@@ -138,7 +150,9 @@ void VocalTrack::processBlock(const float* const* inputChannelData,
                                int                 numInputChannels,
                                float* const*       outputChannelData,
                                int                 numOutputChannels,
-                               int                 numSamples) noexcept
+                               int                 numSamples,
+                               int64_t             blockStartSamples,
+                               bool                transportPlaying) noexcept
 {
     if (numSamples <= 0) return;
 
@@ -170,6 +184,13 @@ void VocalTrack::processBlock(const float* const* inputChannelData,
     {
         (void)recordBuffer_.write(inputChannelData[0], numSamples);
     }
+
+    if (transportPlaying && !capturing)
+    {
+        playback_.render(outputChannelData, numOutputChannels, numSamples,
+                         blockStartSamples,
+                         sampleRate_.load(std::memory_order_relaxed));
+    }
 }
 
 // ---- WORKER THREAD --------------------------------------------------------
@@ -182,31 +203,39 @@ void VocalTrack::drainToFile()
     if (state != State::Recording && state != State::Stopping)
         return;
 
-    std::lock_guard<std::mutex> lock(wavWriterMutex_);
+    std::filesystem::path completedTake;
+    {
+        std::lock_guard<std::mutex> lock(wavWriterMutex_);
 
-    if (!wavWriter_.isOpen())
-        return;
+        if (!wavWriter_.isOpen())
+            return;
 
     // Drain the ring buffer in chunks.  The temporary array is on the
     // worker thread's stack — no heap allocation.
     constexpr int kChunk = 4096;
     float tmp[kChunk];
 
-    while (true)
-    {
-        const int n = recordBuffer_.read(tmp, kChunk);
-        if (n == 0) break;
-        wavWriter_.write(tmp, n);
-    }
+        while (true)
+        {
+            const int n = recordBuffer_.read(tmp, kChunk);
+            if (n == 0) break;
+            wavWriter_.write(tmp, n);
+        }
 
     // If stop was requested and the ring buffer is now completely empty,
     // finalise the take file and transition back to Idle.
-    if (state == State::Stopping && recordBuffer_.availableRead() == 0)
-    {
-        wavWriter_.close();
-        state_.store(static_cast<int>(State::Idle),
-                     std::memory_order_release);
+        if (state == State::Stopping && recordBuffer_.availableRead() == 0)
+        {
+            wavWriter_.close();
+            completedTake = currentTakePath_;
+            currentTakePath_.clear();
+            state_.store(static_cast<int>(State::Idle),
+                         std::memory_order_release);
+        }
     }
+
+    if (!completedTake.empty() && !playback_.load(completedTake))
+        recordingError_.store(true, std::memory_order_release);
 }
 
 } // namespace ssbb

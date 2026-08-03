@@ -33,6 +33,7 @@ private:
 
     // Transport controls
     juce::TextButton   playStopButton_  { "Play" };
+    juce::TextButton   rewindButton_    { "Rewind" };
     juce::Label        tempoLabel_;
     juce::Slider       tempoSlider_;
     juce::Label        timeSigLabel_;

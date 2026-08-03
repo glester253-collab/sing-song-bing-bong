@@ -61,6 +61,7 @@ std::filesystem::path TakeManager::createTakePath(
     // This prevents collisions when called rapidly within the same second and
     // also handles pre-existing files from previous sessions.
     std::filesystem::path candidate;
+    bool foundFreePath = false;
     for (int n = 1; n <= 999; ++n)
     {
         // Build filename: take_YYYYMMDDTHHmmss_NNN.wav
@@ -75,17 +76,33 @@ std::filesystem::path TakeManager::createTakePath(
             if (p == candidate) { alreadyReserved = true; break; }
 
         if (!alreadyReserved && !std::filesystem::exists(candidate))
-            break;  // found a free slot
+        {
+            foundFreePath = true;
+            break;
+        }
 
-        // Safety: if we exhausted all 999 slots (highly unlikely), fall through
-        // to let open() fail rather than overwriting anything.
+        // Never fall through with an existing path: WavWriter opens with
+        // truncation, so doing so could destroy an earlier recording.
     }
+
+    if (!foundFreePath)
+        return {};
 
     // Record in both the ordered metadata list and the quick-lookup set.
     reserved_.push_back(candidate);
     takes_.push_back(TakeMetadata{candidate, sampleRate, numChannels, timestamp});
 
     return candidate;
+}
+
+void TakeManager::discardLastReservation(const std::filesystem::path& path) noexcept
+{
+    if (!takes_.empty() && !reserved_.empty() &&
+        takes_.back().path == path && reserved_.back() == path)
+    {
+        takes_.pop_back();
+        reserved_.pop_back();
+    }
 }
 
 } // namespace ssbb
