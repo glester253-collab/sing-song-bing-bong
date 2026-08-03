@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -493,28 +494,28 @@ int main()
     // -------------------------------------------------------------------------
     {
         TempDir tmp("ssbb_test_vocal_playback");
-        ssbb::VocalTrack track;
-        track.prepare(44100.0, 64);
-        track.setTakeDirectory(tmp.path);
-        track.arm();
-        track.startRecording();
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(tmp.path);
+        track->arm();
+        track->startRecording();
 
         const float input[4] = { 0.25f, 0.5f, -0.25f, -0.5f };
         const float* inputs[1] = { input };
         float monitor[4] = {};
         float* monitorOutputs[1] = { monitor };
-        track.processBlock(inputs, 1, monitorOutputs, 1, 4, 0, false);
-        track.stopRecording();
-        track.drainToFile();
+        track->processBlock(inputs, 1, monitorOutputs, 1, 4, 0, false);
+        track->stopRecording();
+        track->drainToFile();
 
-        expect(track.getState() == ssbb::VocalTrack::State::Idle,
+        expect(track->getState() == ssbb::VocalTrack::State::Idle,
                "VocalTrack: returns to Idle after drain", success);
-        expect(track.hasPlayback(),
+        expect(track->hasPlayback(),
                "VocalTrack: completed take is available for playback", success);
 
         float playbackOut[4] = {};
         float* playbackOutputs[1] = { playbackOut };
-        track.processBlock(nullptr, 0, playbackOutputs, 1, 4, 0, true);
+        track->processBlock(nullptr, 0, playbackOutputs, 1, 4, 0, true);
         for (int i = 0; i < 4; ++i)
             expect(playbackOut[i] == input[i],
                    "VocalTrack: latest take plays from transport zero", success);
@@ -531,17 +532,17 @@ int main()
             file << "block directory creation";
         }
 
-        ssbb::VocalTrack track;
-        track.prepare(44100.0, 64);
-        track.setTakeDirectory(blocker);
-        track.arm();
-        track.startRecording();
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(blocker);
+        track->arm();
+        track->startRecording();
 
-        expect(track.getState() == ssbb::VocalTrack::State::Armed,
+        expect(track->getState() == ssbb::VocalTrack::State::Armed,
                "VocalTrack: failed file open leaves track Armed", success);
-        expect(track.hasRecordingError(),
+        expect(track->hasRecordingError(),
                "VocalTrack: failed file open exposes an error", success);
-        expect(track.getTakeManager().takes().empty(),
+        expect(track->getTakeManager().takes().empty(),
                "VocalTrack: failed file open is not stored as a take", success);
     }
 
