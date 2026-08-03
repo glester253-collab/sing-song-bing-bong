@@ -8,6 +8,7 @@
 #include "VocalTrack.h"
 
 #include <filesystem>
+#include <string>
 #include <system_error>
 
 namespace ssbb {
@@ -18,6 +19,8 @@ VocalTrack::VocalTrack()
 {
     // Provide a safe default take directory (overridden by the application).
     takeDir_ = std::filesystem::temp_directory_path() / "ssbb_takes";
+    sessionPath_ = takeDir_ / "session.json";
+    sessionData_.version = SessionDocument::kSchemaVersion;
 }
 
 // ---- Prepare (device setup thread) ---------------------------------------
@@ -80,7 +83,82 @@ void VocalTrack::setTakeDirectory(const std::filesystem::path& dir)
     takeDir_ = dir;
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
+    std::lock_guard<std::mutex> lock(jobMutex_);
+    sessionPath_ = dir / "session.json";
+    const auto recovery = dir / "session.recovery.json";
+    recoveryAvailable_.store(std::filesystem::is_regular_file(recovery, ec),
+                             std::memory_order_release);
     // (ec is intentionally ignored — failure will surface when opening the file)
+}
+
+void VocalTrack::requestImport(const std::filesystem::path& wavPath)
+{
+    if (wavPath.empty()) return;
+    std::lock_guard<std::mutex> lock(jobMutex_);
+    pendingImportPath_ = wavPath;
+    workerStatus_.store(static_cast<int>(WorkerStatus::ImportPending),
+                        std::memory_order_release);
+}
+
+void VocalTrack::requestExport(const std::filesystem::path& wavPath)
+{
+    if (wavPath.empty()) return;
+    std::lock_guard<std::mutex> lock(jobMutex_);
+    pendingExportPath_ = wavPath;
+    workerStatus_.store(static_cast<int>(WorkerStatus::ExportPending),
+                        std::memory_order_release);
+}
+
+void VocalTrack::requestAutosave() noexcept
+{
+    autosaveRequested_.store(true, std::memory_order_release);
+}
+
+void VocalTrack::requestRecoveryLoad() noexcept
+{
+    recoveryRequested_.store(true, std::memory_order_release);
+}
+
+bool VocalTrack::recoveryAvailable() const
+{
+    return recoveryAvailable_.load(std::memory_order_acquire);
+}
+
+bool VocalTrack::copyWaveformIfChanged(
+    std::vector<WaveformCache::Frame>& out,
+    uint64_t& generation) const
+{
+    std::lock_guard<std::mutex> lock(waveformMutex_);
+    if (generation == waveformGeneration_)
+        return false;
+    out = waveformFrames_;
+    generation = waveformGeneration_;
+    return true;
+}
+
+void VocalTrack::setClipOffsetSamples(int64_t value)
+{
+    clipOffsetSamples_.store(value > 0 ? value : 0, std::memory_order_relaxed);
+    updateSessionClipEdits();
+    requestAutosave();
+}
+
+void VocalTrack::setTrimStartSamples(int64_t value)
+{
+    const int64_t length = playback_.numFrames();
+    const int64_t clamped = value < 0 ? 0 : (value > length ? length : value);
+    trimStartSamples_.store(clamped, std::memory_order_relaxed);
+    updateSessionClipEdits();
+    requestAutosave();
+}
+
+void VocalTrack::setTrimEndSamples(int64_t value)
+{
+    const int64_t length = playback_.numFrames();
+    const int64_t clamped = value < 0 ? 0 : (value > length ? length : value);
+    trimEndSamples_.store(clamped, std::memory_order_relaxed);
+    updateSessionClipEdits();
+    requestAutosave();
 }
 
 bool VocalTrack::openNewTake()
@@ -187,9 +265,13 @@ void VocalTrack::processBlock(const float* const* inputChannelData,
 
     if (transportPlaying && !capturing)
     {
-        playback_.render(outputChannelData, numOutputChannels, numSamples,
-                         blockStartSamples,
-                         sampleRate_.load(std::memory_order_relaxed));
+        playback_.renderClip(
+            outputChannelData, numOutputChannels, numSamples,
+            blockStartSamples,
+            sampleRate_.load(std::memory_order_relaxed),
+            clipOffsetSamples_.load(std::memory_order_relaxed),
+            trimStartSamples_.load(std::memory_order_relaxed),
+            trimEndSamples_.load(std::memory_order_relaxed));
     }
 }
 
@@ -219,7 +301,13 @@ void VocalTrack::drainToFile()
         {
             const int n = recordBuffer_.read(tmp, kChunk);
             if (n == 0) break;
-            wavWriter_.write(tmp, n);
+            if (!wavWriter_.write(tmp, n))
+            {
+                recordingError_.store(true, std::memory_order_release);
+                state_.store(static_cast<int>(State::Stopping),
+                             std::memory_order_release);
+                break;
+            }
         }
 
     // If stop was requested and the ring buffer is now completely empty,
@@ -234,8 +322,172 @@ void VocalTrack::drainToFile()
         }
     }
 
-    if (!completedTake.empty() && !playback_.load(completedTake))
-        recordingError_.store(true, std::memory_order_release);
+    if (!completedTake.empty())
+    {
+        if (playback_.load(completedTake))
+        {
+            publishWaveform(completedTake);
+            appendSourceToSession(completedTake,
+                                  playback_.sampleRate(),
+                                  playback_.numChannels(),
+                                  playback_.numFrames(),
+                                  "recorded");
+            requestAutosave();
+        }
+        else
+        {
+            recordingError_.store(true, std::memory_order_release);
+        }
+    }
+}
+
+void VocalTrack::publishWaveform(const std::filesystem::path& path)
+{
+    waveformCache_.buildFromFile(path, 256);
+    std::vector<WaveformCache::Frame> next;
+    if (waveformCache_.isReady())
+        next = waveformCache_.getFrames();
+
+    std::lock_guard<std::mutex> lock(waveformMutex_);
+    waveformFrames_ = std::move(next);
+    ++waveformGeneration_;
+}
+
+void VocalTrack::appendSourceToSession(const std::filesystem::path& path,
+                                       double sampleRate,
+                                       int channels,
+                                       int64_t frames,
+                                       const char* sourceLabel)
+{
+    clipOffsetSamples_.store(0, std::memory_order_relaxed);
+    trimStartSamples_.store(0, std::memory_order_relaxed);
+    trimEndSamples_.store(0, std::memory_order_relaxed);
+
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+
+    TakeEntry take;
+    take.path = path.string();
+    take.sampleRate = sampleRate;
+    take.numChannels = channels;
+    take.isoTimestamp = sourceLabel ? sourceLabel : "source";
+    sessionData_.takes.push_back(std::move(take));
+
+    ClipEntry clip;
+    clip.takePath = path.string();
+    clip.sourceLengthSamples = frames;
+    sessionData_.clips.push_back(std::move(clip));
+    sessionData_.dirty = true;
+}
+
+void VocalTrack::updateSessionClipEdits()
+{
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+    if (sessionData_.clips.empty()) return;
+    auto& clip = sessionData_.clips.back();
+    clip.offsetSamples = clipOffsetSamples_.load(std::memory_order_relaxed);
+    clip.trimStartSamples = trimStartSamples_.load(std::memory_order_relaxed);
+    clip.trimEndSamples = trimEndSamples_.load(std::memory_order_relaxed);
+    sessionData_.dirty = true;
+}
+
+void VocalTrack::serviceWorkerTasks()
+{
+    drainToFile();
+    bool servicedForegroundJob = false;
+
+    std::filesystem::path importPath;
+    std::filesystem::path exportPath;
+    std::filesystem::path sessionPath;
+    {
+        std::lock_guard<std::mutex> lock(jobMutex_);
+        importPath.swap(pendingImportPath_);
+        exportPath.swap(pendingExportPath_);
+        sessionPath = sessionPath_;
+    }
+
+    if (!importPath.empty())
+    {
+        servicedForegroundJob = true;
+        if (playback_.load(importPath))
+        {
+            publishWaveform(importPath);
+            appendSourceToSession(importPath,
+                                  playback_.sampleRate(),
+                                  playback_.numChannels(),
+                                  playback_.numFrames(),
+                                  "imported");
+            workerStatus_.store(static_cast<int>(WorkerStatus::ImportSucceeded),
+                                std::memory_order_release);
+            requestAutosave();
+        }
+        else
+        {
+            workerStatus_.store(static_cast<int>(WorkerStatus::ImportFailed),
+                                std::memory_order_release);
+        }
+    }
+
+    if (!exportPath.empty())
+    {
+        servicedForegroundJob = true;
+        const bool ok = playback_.exportTo(exportPath);
+        workerStatus_.store(static_cast<int>(ok ? WorkerStatus::ExportSucceeded
+                                                : WorkerStatus::ExportFailed),
+                            std::memory_order_release);
+    }
+
+    if (recoveryRequested_.exchange(false, std::memory_order_acq_rel))
+    {
+        servicedForegroundJob = true;
+        SessionData recovered;
+        bool ok = SessionDocument::loadRecovery(sessionPath, recovered);
+        std::filesystem::path source;
+        if (ok && !recovered.clips.empty())
+            source = recovered.clips.back().takePath;
+        else if (ok && !recovered.takes.empty())
+            source = recovered.takes.back().path;
+        else
+            ok = false;
+
+        if (ok)
+            ok = playback_.load(source);
+
+        if (ok)
+        {
+            publishWaveform(source);
+            std::lock_guard<std::mutex> lock(sessionMutex_);
+            sessionData_ = std::move(recovered);
+            if (!sessionData_.clips.empty())
+            {
+                const auto& clip = sessionData_.clips.back();
+                clipOffsetSamples_.store(clip.offsetSamples, std::memory_order_relaxed);
+                trimStartSamples_.store(clip.trimStartSamples, std::memory_order_relaxed);
+                trimEndSamples_.store(clip.trimEndSamples, std::memory_order_relaxed);
+            }
+        }
+
+        workerStatus_.store(static_cast<int>(ok ? WorkerStatus::RecoverySucceeded
+                                                : WorkerStatus::RecoveryFailed),
+                            std::memory_order_release);
+    }
+
+    if (!servicedForegroundJob &&
+        autosaveRequested_.exchange(false, std::memory_order_acq_rel))
+    {
+        SessionData snapshot;
+        {
+            std::lock_guard<std::mutex> lock(sessionMutex_);
+            snapshot = sessionData_;
+            snapshot.version = SessionDocument::kSchemaVersion;
+            snapshot.dirty = true;
+        }
+        const bool ok = SessionDocument::saveRecovery(sessionPath, snapshot);
+        if (ok)
+            recoveryAvailable_.store(true, std::memory_order_release);
+        workerStatus_.store(static_cast<int>(ok ? WorkerStatus::AutosaveSucceeded
+                                                : WorkerStatus::AutosaveFailed),
+                            std::memory_order_release);
+    }
 }
 
 } // namespace ssbb

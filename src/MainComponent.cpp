@@ -3,6 +3,21 @@
 // No audio-thread rules apply; JUCE APIs and String construction are fine.
 #include "MainComponent.h"
 
+#include <filesystem>
+
+namespace {
+
+std::filesystem::path toPath(const juce::File& file)
+{
+#if defined(_WIN32)
+    return std::filesystem::path(file.getFullPathName().toWideCharPointer());
+#else
+    return std::filesystem::path(file.getFullPathName().toStdString());
+#endif
+}
+
+} // namespace
+
 namespace ssbb {
 
 MainComponent::MainComponent(AudioEngine& engine)
@@ -153,6 +168,55 @@ MainComponent::MainComponent(AudioEngine& engine)
         }
     };
 
+    addAndMakeVisible(importButton_);
+    importButton_.onClick = [this] { startImport(); };
+
+    addAndMakeVisible(exportButton_);
+    exportButton_.onClick = [this] { startExport(); };
+
+    addAndMakeVisible(recoverButton_);
+    recoverButton_.onClick = [this]
+    {
+        engine_.getVocalTrack().requestRecoveryLoad();
+    };
+    recoverButton_.setEnabled(engine_.getVocalTrack().recoveryAvailable());
+
+    auto prepareEditSlider = [this](juce::Slider& slider)
+    {
+        slider.setSliderStyle(juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 64, 24);
+        slider.setTextValueSuffix(" s");
+        slider.setRange(0.0, 30.0, 0.01);
+        addAndMakeVisible(slider);
+    };
+    for (auto* label : { &trimStartLabel_, &trimEndLabel_, &moveLabel_ })
+    {
+        label->setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(*label);
+    }
+    prepareEditSlider(trimStartSlider_);
+    prepareEditSlider(trimEndSlider_);
+    prepareEditSlider(moveSlider_);
+
+    trimStartSlider_.onValueChange = [this]
+    {
+        const double rate = engine_.getVocalTrack().getPlaybackSampleRate();
+        engine_.getVocalTrack().setTrimStartSamples(
+            static_cast<int64_t>(trimStartSlider_.getValue() * rate));
+    };
+    trimEndSlider_.onValueChange = [this]
+    {
+        const double rate = engine_.getVocalTrack().getPlaybackSampleRate();
+        engine_.getVocalTrack().setTrimEndSamples(
+            static_cast<int64_t>(trimEndSlider_.getValue() * rate));
+    };
+    moveSlider_.onValueChange = [this]
+    {
+        const double rate = engine_.getVocalTrack().getPlaybackSampleRate();
+        engine_.getVocalTrack().setClipOffsetSamples(
+            static_cast<int64_t>(moveSlider_.getValue() * rate));
+    };
+
     // ---- Info label ----
     infoLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(infoLabel_);
@@ -162,7 +226,7 @@ MainComponent::MainComponent(AudioEngine& engine)
     engine_.getTransport().setTimeSignature(4, 4);
 
     startTimerHz(20);          // 50 ms refresh for info label / button sync
-    setSize(700, 560);
+    setSize(760, 720);
 }
 
 MainComponent::~MainComponent()
@@ -170,12 +234,124 @@ MainComponent::~MainComponent()
     stopTimer();
 }
 
+void MainComponent::paint(juce::Graphics& g)
+{
+    g.fillAll(juce::Colour(0xff17191d));
+
+    auto area = waveformBounds_.toFloat();
+    g.setColour(juce::Colour(0xff22262c));
+    g.fillRoundedRectangle(area, 5.0f);
+    g.setColour(juce::Colour(0xff59636f));
+    g.drawRoundedRectangle(area, 5.0f, 1.0f);
+
+    if (waveformFrames_.empty())
+    {
+        g.setColour(juce::Colour(0xffaeb7c2));
+        g.drawFittedText("Record or import a WAV to see its waveform",
+                         waveformBounds_.reduced(12),
+                         juce::Justification::centred, 1);
+        return;
+    }
+
+    const float centre = area.getCentreY();
+    const float halfHeight = area.getHeight() * 0.43f;
+    const int width = waveformBounds_.getWidth();
+    g.setColour(juce::Colour(0xff62d6c5));
+    for (int x = 0; x < width; ++x)
+    {
+        const auto index = static_cast<std::size_t>(
+            static_cast<double>(x) * waveformFrames_.size() /
+            static_cast<double>(width));
+        const auto& frame = waveformFrames_[
+            index < waveformFrames_.size() ? index : waveformFrames_.size() - 1];
+        const float yTop = centre - juce::jlimit(0.0f, 1.0f, frame.peakPos) * halfHeight;
+        const float yBottom = centre - juce::jlimit(-1.0f, 0.0f, frame.peakNeg) * halfHeight;
+        const float screenX = area.getX() + static_cast<float>(x);
+        g.drawVerticalLine(static_cast<int>(screenX), yTop, yBottom);
+    }
+
+    const auto totalFrames = engine_.getVocalTrack().getPlaybackLengthSamples();
+    if (totalFrames > 0)
+    {
+        const auto trimStart = engine_.getVocalTrack().getTrimStartSamples();
+        const auto trimEnd = engine_.getVocalTrack().getTrimEndSamples();
+        const auto clipOffset = engine_.getVocalTrack().getClipOffsetSamples();
+        const float trimLeft = static_cast<float>(trimStart) /
+                               static_cast<float>(totalFrames);
+        const float trimRight = static_cast<float>(trimEnd) /
+                                static_cast<float>(totalFrames);
+        g.setColour(juce::Colour(0x99000000));
+        g.fillRect(area.withWidth(area.getWidth() * juce::jlimit(0.0f, 1.0f, trimLeft)));
+        const float rightWidth = area.getWidth() * juce::jlimit(0.0f, 1.0f, trimRight);
+        g.fillRect(juce::Rectangle<float>(area.getRight() - rightWidth,
+                                          area.getY(), rightWidth, area.getHeight()));
+
+        const auto position = engine_.getTransport().getPositionInSamples();
+        const auto sourcePosition = position - clipOffset + trimStart;
+        if (sourcePosition >= trimStart && sourcePosition < totalFrames - trimEnd)
+        {
+            const float fraction = juce::jlimit(
+                0.0f, 1.0f,
+                static_cast<float>(sourcePosition) / static_cast<float>(totalFrames));
+            const float playhead = area.getX() + fraction * area.getWidth();
+            g.setColour(juce::Colour(0xffffc857));
+            g.drawVerticalLine(static_cast<int>(playhead), area.getY(), area.getBottom());
+        }
+    }
+}
+
+void MainComponent::startImport()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        "Import an owned or licensed WAV", juce::File{}, "*.wav");
+    const int flags = juce::FileBrowserComponent::openMode
+                      | juce::FileBrowserComponent::canSelectFiles;
+    fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser)
+    {
+        const auto file = chooser.getResult();
+        if (!file.existsAsFile()) return;
+        const auto path = toPath(file);
+
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                .withTitle("Confirm audio rights")
+                .withMessage("Import only audio you own or are licensed to use. "
+                             "Do you have permission to use this WAV?")
+                .withButton("Import")
+                .withButton("Cancel"),
+            [this, path](int result)
+            {
+                if (result == 1)
+                    engine_.getVocalTrack().requestImport(path);
+            });
+    });
+}
+
+void MainComponent::startExport()
+{
+    if (!engine_.getVocalTrack().hasPlayback()) return;
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        "Export the latest take", juce::File{}, "*.wav");
+    const int flags = juce::FileBrowserComponent::saveMode
+                      | juce::FileBrowserComponent::canSelectFiles
+                      | juce::FileBrowserComponent::warnAboutOverwriting;
+    fileChooser_->launchAsync(flags, [this](const juce::FileChooser& chooser)
+    {
+        auto file = chooser.getResult();
+        if (file == juce::File{}) return;
+        if (!file.hasFileExtension("wav"))
+            file = file.withFileExtension("wav");
+        engine_.getVocalTrack().requestExport(toPath(file));
+    });
+}
+
 void MainComponent::resized()
 {
     auto bounds = getLocalBounds().reduced(8);
 
     // Top: device selector gets most of the vertical space.
-    deviceSelector_.setBounds(bounds.removeFromTop(340));
+    deviceSelector_.setBounds(bounds.removeFromTop(300));
     bounds.removeFromTop(8);
 
     // Transport row
@@ -205,6 +381,28 @@ void MainComponent::resized()
     recRow.removeFromLeft(8);
     recordButton_.setBounds(recRow.removeFromLeft(90));
 
+    bounds.removeFromTop(6);
+    auto fileRow = bounds.removeFromTop(36);
+    importButton_.setBounds(fileRow.removeFromLeft(110));
+    fileRow.removeFromLeft(8);
+    exportButton_.setBounds(fileRow.removeFromLeft(110));
+    fileRow.removeFromLeft(8);
+    recoverButton_.setBounds(fileRow.removeFromLeft(90));
+
+    bounds.removeFromTop(8);
+    auto editRow = bounds.removeFromTop(36);
+    trimStartLabel_.setBounds(editRow.removeFromLeft(72));
+    trimStartSlider_.setBounds(editRow.removeFromLeft(150));
+    editRow.removeFromLeft(8);
+    trimEndLabel_.setBounds(editRow.removeFromLeft(64));
+    trimEndSlider_.setBounds(editRow.removeFromLeft(150));
+    editRow.removeFromLeft(8);
+    moveLabel_.setBounds(editRow.removeFromLeft(48));
+    moveSlider_.setBounds(editRow.removeFromLeft(150));
+
+    bounds.removeFromTop(8);
+    waveformBounds_ = bounds.removeFromTop(190);
+
     // Info label
     bounds.removeFromTop(8);
     infoLabel_.setBounds(bounds.removeFromTop(28));
@@ -214,6 +412,13 @@ void MainComponent::resized()
 
 void MainComponent::timerCallback()
 {
+    ++timerTicks_;
+    if (timerTicks_ >= 200)
+    {
+        timerTicks_ = 0;
+        engine_.getVocalTrack().requestAutosave();
+    }
+
     // Keep the play/stop button label in sync with the true transport state
     // (handles external stops such as device errors).
     playStopButton_.setButtonText(
@@ -236,6 +441,35 @@ void MainComponent::timerCallback()
         recordButton_.setButtonText("Stop Rec");
     else
         recordButton_.setButtonText("Record");
+
+    exportButton_.setEnabled(engine_.getVocalTrack().hasPlayback());
+    recoverButton_.setEnabled(engine_.getVocalTrack().recoveryAvailable());
+
+    if (engine_.getVocalTrack().copyWaveformIfChanged(
+            waveformFrames_, waveformGeneration_))
+    {
+        const double rate = engine_.getVocalTrack().getPlaybackSampleRate();
+        const double duration = rate > 0.0
+            ? static_cast<double>(engine_.getVocalTrack().getPlaybackLengthSamples()) / rate
+            : 0.0;
+        trimStartSlider_.setRange(0.0, duration, 0.01);
+        trimEndSlider_.setRange(0.0, duration, 0.01);
+        if (rate > 0.0)
+        {
+            trimStartSlider_.setValue(
+                static_cast<double>(engine_.getVocalTrack().getTrimStartSamples()) / rate,
+                juce::dontSendNotification);
+            trimEndSlider_.setValue(
+                static_cast<double>(engine_.getVocalTrack().getTrimEndSamples()) / rate,
+                juce::dontSendNotification);
+            moveSlider_.setValue(
+                static_cast<double>(engine_.getVocalTrack().getClipOffsetSamples()) / rate,
+                juce::dontSendNotification);
+        }
+        repaint(waveformBounds_);
+    }
+    else if (engine_.getTransport().isPlaying())
+        repaint(waveformBounds_);
 
     updateInfoLabel();
 }
@@ -276,8 +510,25 @@ void MainComponent::updateInfoLabel()
 
     if (engine_.getVocalTrack().hasRecordingError())
         info << "  |  Recording/playback error";
-    else if (engine_.getVocalTrack().hasPlayback())
-        info << "  |  Latest take ready";
+    else
+    {
+        switch (engine_.getVocalTrack().getWorkerStatus())
+        {
+            case VocalTrack::WorkerStatus::ImportPending:   info << "  |  Importing..."; break;
+            case VocalTrack::WorkerStatus::ImportSucceeded: info << "  |  Import ready"; break;
+            case VocalTrack::WorkerStatus::ImportFailed:    info << "  |  Import failed"; break;
+            case VocalTrack::WorkerStatus::ExportPending:   info << "  |  Exporting..."; break;
+            case VocalTrack::WorkerStatus::ExportSucceeded: info << "  |  Export complete"; break;
+            case VocalTrack::WorkerStatus::ExportFailed:    info << "  |  Export failed"; break;
+            case VocalTrack::WorkerStatus::AutosaveSucceeded: info << "  |  Autosaved"; break;
+            case VocalTrack::WorkerStatus::AutosaveFailed:  info << "  |  Autosave failed"; break;
+            case VocalTrack::WorkerStatus::RecoverySucceeded: info << "  |  Recovery loaded"; break;
+            case VocalTrack::WorkerStatus::RecoveryFailed:  info << "  |  Recovery failed"; break;
+            default:
+                if (engine_.getVocalTrack().hasPlayback()) info << "  |  Latest take ready";
+                break;
+        }
+    }
 
     infoLabel_.setText(info, juce::dontSendNotification);
 }

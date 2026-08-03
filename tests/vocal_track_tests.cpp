@@ -22,6 +22,7 @@
 #include "VocalTrack.h"
 
 #include <cmath>
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -29,6 +30,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -69,6 +71,43 @@ struct TempDir
         return path / name;
     }
 };
+
+bool writePcm16Wav(const std::filesystem::path& path,
+                   const std::array<int16_t, 4>& samples,
+                   uint32_t sampleRate = 44100)
+{
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) return false;
+
+    auto write16 = [&file](uint16_t value)
+    {
+        const char bytes[2] = {
+            static_cast<char>(value & 0xffu),
+            static_cast<char>((value >> 8u) & 0xffu)
+        };
+        file.write(bytes, 2);
+    };
+    auto write32 = [&file](uint32_t value)
+    {
+        const char bytes[4] = {
+            static_cast<char>(value & 0xffu),
+            static_cast<char>((value >> 8u) & 0xffu),
+            static_cast<char>((value >> 16u) & 0xffu),
+            static_cast<char>((value >> 24u) & 0xffu)
+        };
+        file.write(bytes, 4);
+    };
+
+    const uint32_t dataBytes = static_cast<uint32_t>(samples.size() * sizeof(int16_t));
+    file.write("RIFF", 4); write32(36u + dataBytes);
+    file.write("WAVE", 4);
+    file.write("fmt ", 4); write32(16u);
+    write16(1u); write16(1u); write32(sampleRate);
+    write32(sampleRate * 2u); write16(2u); write16(16u);
+    file.write("data", 4); write32(dataBytes);
+    file.write(reinterpret_cast<const char*>(samples.data()), dataBytes);
+    return file.good();
+}
 
 // ============================================================================
 int main()
@@ -328,6 +367,17 @@ int main()
                    "SessionDocument: sourceLengthSamples round-trips exactly", success);
         }
 
+        // A second save replaces the document without leaving a stale backup.
+        orig.clips[0].offsetSamples = 42;
+        expect(ssbb::SessionDocument::save(sessionPath, orig),
+               "SessionDocument: replacement save succeeds", success);
+        ssbb::SessionData replaced;
+        expect(ssbb::SessionDocument::load(sessionPath, replaced) &&
+                   !replaced.clips.empty() && replaced.clips[0].offsetSamples == 42,
+               "SessionDocument: replacement save loads newest data", success);
+        expect(!std::filesystem::exists(sessionPath.string() + ".bak"),
+               "SessionDocument: successful replacement removes backup", success);
+
         // Paths with special characters (backslash / forward slash mix).
         // On Linux paths are always '/'-separated; verify escaping does not corrupt.
         {
@@ -482,6 +532,19 @@ int main()
             expect(right[i] == source[i], "PlaybackBuffer: mono duplicates to right", success);
         }
 
+        float edited[7] = {};
+        float* editedOut[1] = { edited };
+        playback.renderClip(editedOut, 1, 7, 0, 48000.0,
+                            /*clipOffsetSamples=*/2,
+                            /*trimStartSamples=*/1,
+                            /*trimEndSamples=*/1);
+        expect(edited[0] == 0.0f && edited[1] == 0.0f,
+               "PlaybackBuffer: moved clip is silent before its offset", success);
+        expect(edited[2] == source[1] && edited[3] == source[2],
+               "PlaybackBuffer: trim and move are non-destructive", success);
+        expect(edited[4] == 0.0f && edited[6] == 0.0f,
+               "PlaybackBuffer: trimmed clip ends at edited boundary", success);
+
         float mismatch[4] = {};
         float* mismatchOut[1] = { mismatch };
         playback.render(mismatchOut, 1, 4, 0, 44100.0);
@@ -544,6 +607,101 @@ int main()
                "VocalTrack: failed file open exposes an error", success);
         expect(track->getTakeManager().takes().empty(),
                "VocalTrack: failed file open is not stored as a take", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. PCM16 import and float WAV export
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_pcm_import_export");
+        const auto inputPath = tmp / "input16.wav";
+        const std::array<int16_t, 4> pcm { 0, 16384, -16384, 32767 };
+        expect(writePcm16Wav(inputPath, pcm),
+               "PlaybackBuffer: PCM16 fixture written", success);
+
+        ssbb::PlaybackBuffer playback;
+        expect(playback.load(inputPath),
+               "PlaybackBuffer: loads PCM16 WAV", success);
+        float output[4] = {};
+        float* channels[1] = { output };
+        playback.render(channels, 1, 4, 0, 44100.0);
+        expect(std::abs(output[1] - 0.5f) < 0.0001f,
+               "PlaybackBuffer: PCM16 positive sample converts", success);
+        expect(std::abs(output[2] + 0.5f) < 0.0001f,
+               "PlaybackBuffer: PCM16 negative sample converts", success);
+
+        const auto exportPath = tmp / "export.wav";
+        expect(playback.exportTo(exportPath),
+               "PlaybackBuffer: exports current audio", success);
+        ssbb::PlaybackBuffer exported;
+        expect(exported.load(exportPath),
+               "PlaybackBuffer: exported WAV reloads", success);
+        expect(exported.numFrames() == 4,
+               "PlaybackBuffer: exported frame count", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. Worker import, waveform, autosave, export, and recovery
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_worker_jobs");
+        const auto sourcePath = tmp / "owned.wav";
+        ssbb::WavWriter writer;
+        expect(writer.open(sourcePath, 44100.0, 1),
+               "Worker jobs: source opens", success);
+        std::array<float, 512> samples {};
+        for (std::size_t i = 0; i < samples.size(); ++i)
+            samples[i] = (i % 2 == 0) ? 0.25f : -0.25f;
+        expect(writer.write(samples.data(), static_cast<int>(samples.size())),
+               "Worker jobs: source writes", success);
+        writer.close();
+
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(tmp.path);
+        track->requestImport(sourcePath);
+        track->serviceWorkerTasks();
+        expect(track->getWorkerStatus() == ssbb::VocalTrack::WorkerStatus::ImportSucceeded,
+               "Worker jobs: import succeeds", success);
+        expect(track->hasPlayback(), "Worker jobs: import becomes playable", success);
+
+        std::vector<ssbb::WaveformCache::Frame> waveform;
+        uint64_t generation = 0;
+        expect(track->copyWaveformIfChanged(waveform, generation),
+               "Worker jobs: waveform snapshot published", success);
+        expect(!waveform.empty(), "Worker jobs: waveform contains frames", success);
+
+        track->setClipOffsetSamples(32);
+        track->setTrimStartSamples(5);
+        track->setTrimEndSamples(7);
+        track->serviceWorkerTasks();
+        expect(track->getWorkerStatus() == ssbb::VocalTrack::WorkerStatus::AutosaveSucceeded,
+               "Worker jobs: deferred autosave succeeds", success);
+        expect(track->recoveryAvailable(),
+               "Worker jobs: recovery metadata exists", success);
+
+        const auto exportPath = tmp / "worker-export.wav";
+        track->requestExport(exportPath);
+        track->serviceWorkerTasks();
+        expect(track->getWorkerStatus() == ssbb::VocalTrack::WorkerStatus::ExportSucceeded,
+               "Worker jobs: export succeeds", success);
+        expect(std::filesystem::exists(exportPath),
+               "Worker jobs: export file exists", success);
+
+        auto recovered = std::make_unique<ssbb::VocalTrack>();
+        recovered->prepare(44100.0, 64);
+        recovered->setTakeDirectory(tmp.path);
+        recovered->requestRecoveryLoad();
+        recovered->serviceWorkerTasks();
+        expect(recovered->getWorkerStatus() ==
+                   ssbb::VocalTrack::WorkerStatus::RecoverySucceeded,
+               "Worker jobs: recovery succeeds", success);
+        expect(recovered->hasPlayback(),
+               "Worker jobs: recovered source is playable", success);
+        expect(recovered->getClipOffsetSamples() == 32 &&
+                   recovered->getTrimStartSamples() == 5 &&
+                   recovered->getTrimEndSamples() == 7,
+               "Worker jobs: recovery restores non-destructive edits", success);
     }
 
     // =========================================================================

@@ -42,12 +42,12 @@ void AudioEngine::workerThreadLoop()
 {
     while (!workerStop_.load(std::memory_order_relaxed))
     {
-        vocalTrack_.drainToFile();
+        vocalTrack_.serviceWorkerTasks();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     // Final drain: flush any samples captured between the last loop iteration
     // and the audio callback being removed.
-    vocalTrack_.drainToFile();
+    vocalTrack_.serviceWorkerTasks();
 }
 
 // ---- AudioIODeviceCallback (message thread / device thread) ----

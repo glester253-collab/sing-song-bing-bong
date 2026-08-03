@@ -35,10 +35,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <vector>
 #include "RecordBuffer.h"
 #include "TakeManager.h"
 #include "WavWriter.h"
 #include "PlaybackBuffer.h"
+#include "SessionDocument.h"
+#include "WaveformCache.h"
 
 namespace ssbb {
 
@@ -52,6 +55,21 @@ public:
         Monitoring = 2,
         Recording  = 3,
         Stopping   = 4
+    };
+
+    enum class WorkerStatus : int
+    {
+        Idle = 0,
+        ImportPending,
+        ImportSucceeded,
+        ImportFailed,
+        ExportPending,
+        ExportSucceeded,
+        ExportFailed,
+        AutosaveSucceeded,
+        AutosaveFailed,
+        RecoverySucceeded,
+        RecoveryFailed
     };
 
     VocalTrack();
@@ -113,10 +131,41 @@ public:
     {
         return playback_.numFrames();
     }
+    [[nodiscard]] double getPlaybackSampleRate() const noexcept
+    {
+        return playback_.sampleRate();
+    }
     [[nodiscard]] bool hasRecordingError() const noexcept
     {
         return recordingError_.load(std::memory_order_acquire);
     }
+
+    void requestImport(const std::filesystem::path& wavPath);
+    void requestExport(const std::filesystem::path& wavPath);
+    void requestAutosave() noexcept;
+    void requestRecoveryLoad() noexcept;
+
+    [[nodiscard]] WorkerStatus getWorkerStatus() const noexcept
+    {
+        return static_cast<WorkerStatus>(workerStatus_.load(std::memory_order_acquire));
+    }
+
+    [[nodiscard]] bool recoveryAvailable() const;
+
+    /// Copy a new immutable waveform snapshot for the UI. Returns true only
+    /// when `generation` was stale and `out` was updated.
+    bool copyWaveformIfChanged(std::vector<WaveformCache::Frame>& out,
+                               uint64_t& generation) const;
+
+    void setClipOffsetSamples(int64_t value);
+    void setTrimStartSamples(int64_t value);
+    void setTrimEndSamples(int64_t value);
+    [[nodiscard]] int64_t getClipOffsetSamples() const noexcept
+    { return clipOffsetSamples_.load(std::memory_order_relaxed); }
+    [[nodiscard]] int64_t getTrimStartSamples() const noexcept
+    { return trimStartSamples_.load(std::memory_order_relaxed); }
+    [[nodiscard]] int64_t getTrimEndSamples() const noexcept
+    { return trimEndSamples_.load(std::memory_order_relaxed); }
 
     /// Access the underlying TakeManager (for session persistence).
     TakeManager& getTakeManager() noexcept { return takeManager_; }
@@ -146,6 +195,10 @@ public:
     /// transitions state to Idle.
     void drainToFile();
 
+    /// Drain recording data and service import/export/autosave/recovery jobs.
+    /// Called only by AudioEngine's worker thread.
+    void serviceWorkerTasks();
+
 private:
     // ---- Audio-thread-safe members (atomics only) -----------------------
 
@@ -161,6 +214,13 @@ private:
     /// Sample rate set by prepare() and used when creating take files.
     std::atomic<double> sampleRate_ { 44100.0 };
     std::atomic<bool> recordingError_ { false };
+    std::atomic<int> workerStatus_ { static_cast<int>(WorkerStatus::Idle) };
+    std::atomic<bool> autosaveRequested_ { false };
+    std::atomic<bool> recoveryRequested_ { false };
+    std::atomic<bool> recoveryAvailable_ { false };
+    std::atomic<int64_t> clipOffsetSamples_ { 0 };
+    std::atomic<int64_t> trimStartSamples_ { 0 };
+    std::atomic<int64_t> trimEndSamples_ { 0 };
 
     // ---- Worker / message thread shared (protected by wavWriterMutex_) --
     //
@@ -170,11 +230,32 @@ private:
     WavWriter  wavWriter_;
     std::filesystem::path currentTakePath_;
     PlaybackBuffer playback_;
+    WaveformCache waveformCache_;
+
+    mutable std::mutex jobMutex_;
+    std::filesystem::path pendingImportPath_;
+    std::filesystem::path pendingExportPath_;
+
+    mutable std::mutex waveformMutex_;
+    std::vector<WaveformCache::Frame> waveformFrames_;
+    uint64_t waveformGeneration_ { 0 };
+
+    mutable std::mutex sessionMutex_;
+    SessionData sessionData_;
+    std::filesystem::path sessionPath_;
 
     // ---- Message-thread-only members ------------------------------------
 
     std::filesystem::path takeDir_;
     TakeManager           takeManager_;
+
+    void publishWaveform(const std::filesystem::path& path);
+    void appendSourceToSession(const std::filesystem::path& path,
+                               double sampleRate,
+                               int channels,
+                               int64_t frames,
+                               const char* sourceLabel);
+    void updateSessionClipEdits();
 };
 
 } // namespace ssbb
