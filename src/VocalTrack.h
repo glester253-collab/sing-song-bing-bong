@@ -38,6 +38,7 @@
 #include "RecordBuffer.h"
 #include "TakeManager.h"
 #include "WavWriter.h"
+#include "PlaybackBuffer.h"
 
 namespace ssbb {
 
@@ -105,7 +106,17 @@ public:
 
     /// Create a new take file for the next recording.
     /// Called automatically by startRecording(); expose for testing.
-    void openNewTake();
+    bool openNewTake();
+
+    [[nodiscard]] bool hasPlayback() const noexcept { return playback_.isReady(); }
+    [[nodiscard]] int64_t getPlaybackLengthSamples() const noexcept
+    {
+        return playback_.numFrames();
+    }
+    [[nodiscard]] bool hasRecordingError() const noexcept
+    {
+        return recordingError_.load(std::memory_order_acquire);
+    }
 
     /// Access the underlying TakeManager (for session persistence).
     TakeManager& getTakeManager() noexcept { return takeManager_; }
@@ -124,7 +135,9 @@ public:
                       int                 numInputChannels,
                       float* const*       outputChannelData,
                       int                 numOutputChannels,
-                      int                 numSamples) noexcept;
+                      int                 numSamples,
+                      int64_t             blockStartSamples,
+                      bool                transportPlaying) noexcept;
 
     // ---- WORKER THREAD -------------------------------------------------------
 
@@ -147,6 +160,7 @@ private:
 
     /// Sample rate set by prepare() and used when creating take files.
     std::atomic<double> sampleRate_ { 44100.0 };
+    std::atomic<bool> recordingError_ { false };
 
     // ---- Worker / message thread shared (protected by wavWriterMutex_) --
     //
@@ -154,6 +168,8 @@ private:
 
     std::mutex wavWriterMutex_;
     WavWriter  wavWriter_;
+    std::filesystem::path currentTakePath_;
+    PlaybackBuffer playback_;
 
     // ---- Message-thread-only members ------------------------------------
 

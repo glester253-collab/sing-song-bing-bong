@@ -10,11 +10,11 @@
 
 ## Milestone 1 — Record a vocal safely
 
-- [ ] Audio/MIDI device selection
-- [ ] Transport, tempo, time signature, metronome, loop
-- [ ] Arm, monitor, record, stop, and play one mono track
-- [ ] Timestamped takes, autosave, and crash recovery
-- [ ] Waveform cache and non-destructive trim/move
+- [x] Audio device selection (MIDI selection remains with Milestone 2)
+- [x] Transport, tempo, time signature, metronome, loop
+- [x] Arm, monitor, record, stop, and play one mono track
+- [ ] Timestamped takes and recovery metadata (timed autosave remains)
+- [ ] Waveform cache and non-destructive trim/move data model (timeline UI remains)
 - [ ] WAV import and export
 
 ## Milestone 2 — Produce a beat

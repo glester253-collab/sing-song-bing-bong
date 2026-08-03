@@ -128,7 +128,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
     //    no allocation, no mutex, no file I/O.
     vocalTrack_.processBlock(inputChannelData,  numInputChannels,
                               outputChannelData, numOutputChannels,
-                              numSamples);
+                              numSamples, blockStart,
+                              transport_.isPlaying());
 
     // 6. Copy channel 0 (now contains metronome + vocal monitor) to all
     //    additional output channels.
