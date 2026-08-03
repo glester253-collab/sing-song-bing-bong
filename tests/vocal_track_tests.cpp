@@ -19,6 +19,7 @@
 #include "WaveformCache.h"
 #include "PlaybackBuffer.h"
 #include "WavWriter.h"
+#include "VocalTrack.h"
 
 #include <cmath>
 #include <cstdint>
