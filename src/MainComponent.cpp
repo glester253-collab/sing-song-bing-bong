@@ -147,6 +147,66 @@ MainComponent::MainComponent(AudioEngine& engine)
         }
     };
 
+    // ---- Play Take ----
+    // Loads and plays the most recently recorded take via ClipPlayer.
+    addAndMakeVisible(playTakeButton_);
+    playTakeButton_.onClick = [this]
+    {
+        auto& cp = engine_.getClipPlayer();
+        if (cp.isPlaying())
+        {
+            cp.stop();
+            playTakeButton_.setButtonText("Play Take");
+        }
+        else
+        {
+            cp.seekToStart();
+            if (engine_.loadLastTakeForPlayback())
+            {
+                cp.play();
+                playTakeButton_.setButtonText("Stop Take");
+            }
+        }
+    };
+
+    // ---- Save session ----
+    addAndMakeVisible(saveButton_);
+    saveButton_.onClick = [this]
+    {
+        juce::FileChooser chooser("Save Session",
+                                  juce::File::getSpecialLocation(
+                                      juce::File::userDocumentsDirectory),
+                                  "*.ssbb");
+        if (chooser.browseForFileToSave(true))
+        {
+            const auto path = chooser.getResult().getFullPathName().toStdString();
+            engine_.saveSession(path);
+        }
+    };
+
+    // ---- Load session ----
+    addAndMakeVisible(loadButton_);
+    loadButton_.onClick = [this]
+    {
+        juce::FileChooser chooser("Open Session",
+                                  juce::File::getSpecialLocation(
+                                      juce::File::userDocumentsDirectory),
+                                  "*.ssbb");
+        if (chooser.browseForFileToOpen())
+        {
+            const auto path = chooser.getResult().getFullPathName().toStdString();
+            engine_.loadSession(path);
+        }
+    };
+
+    // ---- Undo ----
+    addAndMakeVisible(undoButton_);
+    undoButton_.onClick = [this] { commandHistory_.undo(); };
+
+    // ---- Redo ----
+    addAndMakeVisible(redoButton_);
+    redoButton_.onClick = [this] { commandHistory_.redo(); };
+
     // ---- Info label ----
     infoLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(infoLabel_);
@@ -156,7 +216,7 @@ MainComponent::MainComponent(AudioEngine& engine)
     engine_.getTransport().setTimeSignature(4, 4);
 
     startTimerHz(20);          // 50 ms refresh for info label / button sync
-    setSize(700, 560);
+    setSize(700, 640);
 }
 
 MainComponent::~MainComponent()
@@ -188,7 +248,7 @@ void MainComponent::resized()
     row.removeFromLeft(8);
     metronomeToggle_.setBounds(row.removeFromLeft(90));
 
-    // Vocal-track recording row (below the transport row)
+    // Vocal-track recording row
     bounds.removeFromTop(6);
     auto recRow = bounds.removeFromTop(36);
     armButton_.setBounds(recRow.removeFromLeft(60));
@@ -196,6 +256,19 @@ void MainComponent::resized()
     monitorButton_.setBounds(recRow.removeFromLeft(80));
     recRow.removeFromLeft(8);
     recordButton_.setBounds(recRow.removeFromLeft(90));
+    recRow.removeFromLeft(16);
+    playTakeButton_.setBounds(recRow.removeFromLeft(100));
+
+    // Session row (Save / Load / Undo / Redo)
+    bounds.removeFromTop(6);
+    auto sesRow = bounds.removeFromTop(36);
+    saveButton_.setBounds(sesRow.removeFromLeft(80));
+    sesRow.removeFromLeft(8);
+    loadButton_.setBounds(sesRow.removeFromLeft(80));
+    sesRow.removeFromLeft(16);
+    undoButton_.setBounds(sesRow.removeFromLeft(60));
+    sesRow.removeFromLeft(8);
+    redoButton_.setBounds(sesRow.removeFromLeft(60));
 
     // Info label
     bounds.removeFromTop(8);
@@ -229,6 +302,14 @@ void MainComponent::timerCallback()
     else
         recordButton_.setButtonText("Record");
 
+    // Sync Play Take button label with ClipPlayer state.
+    playTakeButton_.setButtonText(
+        engine_.getClipPlayer().isPlaying() ? "Stop Take" : "Play Take");
+
+    // Enable undo/redo buttons based on history depth.
+    undoButton_.setEnabled(commandHistory_.canUndo());
+    redoButton_.setEnabled(commandHistory_.canRedo());
+
     updateInfoLabel();
 }
 
@@ -258,13 +339,23 @@ void MainComponent::updateInfoLabel()
         default:                            vtLabel = "?";           break;
     }
 
+    const int    takes     = static_cast<int>(engine_.getVocalTrack().getTakeManager().takes().size());
+    const int64_t clipFrames = engine_.getClipPlayer().totalFrames();
+
     juce::String info;
     info << "In: "           << inCh  << " ch"
          << "  |  Out: "     << outCh << " ch"
          << "  |  Latency: " << juce::String(latMs,    1) << " ms"
          << "  |  Pos: "     << juce::String(posBeats, 3) << " beats"
          << "  |  "          << juce::String(bpm, 1)      << " BPM"
-         << "  |  Vocal: "   << vtLabel;
+         << "  |  Vocal: "   << vtLabel
+         << "  |  Takes: "   << takes;
+
+    if (clipFrames > 0 && sr > 0.0)
+    {
+        const double clipSec = static_cast<double>(clipFrames) / sr;
+        info << "  |  Clip: " << juce::String(clipSec, 1) << "s";
+    }
 
     infoLabel_.setText(info, juce::dontSendNotification);
 }

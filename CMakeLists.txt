@@ -120,4 +120,19 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME ssbb.vocal_track COMMAND ssbb_vocal_track_tests)
+
+    # Playback subsystem tests: pure C++20 — no JUCE dependency.
+    # Exercises WavReader (round-trip with WavWriter) and CommandHistory.
+    add_executable(ssbb_playback_tests
+        tests/playback_tests.cpp
+        src/SessionDocument.cpp
+    )
+
+    target_include_directories(ssbb_playback_tests
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_BINARY_DIR}/generated
+    )
+
+    add_test(NAME ssbb.playback COMMAND ssbb_playback_tests)
 endif()

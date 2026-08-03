@@ -1,10 +1,13 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
+#include <filesystem>
 #include <thread>
 #include "Transport.h"
 #include "Metronome.h"
 #include "VocalTrack.h"
+#include "ClipPlayer.h"
+#include "SessionDocument.h"
 
 namespace ssbb {
 
@@ -28,6 +31,19 @@ public:
     Transport&   getTransport()   noexcept { return transport_; }
     Metronome&   getMetronome()   noexcept { return metronome_; }
     VocalTrack&  getVocalTrack()  noexcept { return vocalTrack_; }
+    ClipPlayer&  getClipPlayer()  noexcept { return clipPlayer_; }
+
+    /// Load the most recently completed take into the ClipPlayer for playback.
+    /// Must be called on the MESSAGE THREAD after recording has fully stopped
+    /// (VocalTrack state == Idle).
+    /// Returns false if no takes are available or the file cannot be read.
+    bool loadLastTakeForPlayback();
+
+    /// Save the current session to `path`.  Returns false on I/O error.
+    bool saveSession(const std::filesystem::path& path);
+
+    /// Load a session from `path`.  Returns false on I/O error or bad schema.
+    bool loadSession(const std::filesystem::path& path);
 
     /// Number of active input channels reported at the last audioDeviceAboutToStart.
     int getNumInputChannels() const noexcept
@@ -66,6 +82,8 @@ private:
     Transport   transport_;
     Metronome   metronome_;
     VocalTrack  vocalTrack_;
+    ClipPlayer  clipPlayer_;
+    SessionData sessionData_;
 
     std::atomic<int>    numInputChannels_   { 0 };
     std::atomic<int>    numOutputChannels_  { 0 };

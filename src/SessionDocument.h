@@ -66,6 +66,11 @@ public:
     /// Schema version this code reads/writes.
     static constexpr int kSchemaVersion = 1;
 
+    /// Migrate `data` from an older schema version to `kSchemaVersion` in place.
+    /// Returns true if migration was applied or no migration was needed.
+    /// Returns false if the version is unknown / too new to migrate.
+    static bool migrate(SessionData& data) noexcept;
+
 private:
     SessionDocument() = delete;
 };

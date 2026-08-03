@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <thread>
+#include "WavReader.h"
 
 namespace ssbb {
 
@@ -64,6 +65,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     transport_.prepare(sr, blockSize);
     metronome_.prepare(sr, blockSize);
     vocalTrack_.prepare(sr, blockSize);
+    clipPlayer_.prepare(sr, blockSize);
 
     numInputChannels_.store(
         device->getActiveInputChannels().countNumberOfSetBits(),
@@ -130,7 +132,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
                               outputChannelData, numOutputChannels,
                               numSamples);
 
-    // 6. Copy channel 0 (now contains metronome + vocal monitor) to all
+    // 6. Mix ClipPlayer playback into the output.
+    //    processBlock uses only atomics and a pre-loaded read-only buffer —
+    //    no allocation, no mutex, no file I/O.
+    clipPlayer_.processBlock(outputChannelData, numOutputChannels, numSamples);
+
+    // 7. Copy channel 0 (now contains metronome + vocal monitor + clip) to all
     //    additional output channels.
     if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
     {
@@ -139,6 +146,55 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
                 juce::FloatVectorOperations::copy(
                     outputChannelData[ch], outputChannelData[0], numSamples);
     }
+}
+
+bool AudioEngine::loadLastTakeForPlayback()
+{
+    // Grab the most recent take path from the VocalTrack's TakeManager.
+    const auto& takes = vocalTrack_.getTakeManager().takes();
+    if (takes.empty()) return false;
+
+    const auto& lastTake = takes.back();
+
+    WavReader reader;
+    if (!reader.open(lastTake.path)) return false;
+    if (reader.samples().empty())    return false;
+
+    // ClipPlayer must be stopped before loading (it uses double-buffer swap).
+    clipPlayer_.stop();
+    clipPlayer_.seekToStart();
+    clipPlayer_.load(reader.samples(), reader.numChannels());
+    return true;
+}
+
+bool AudioEngine::saveSession(const std::filesystem::path& path)
+{
+    // Sync TakeManager records → SessionData.
+    sessionData_.takes.clear();
+    for (const auto& tm : vocalTrack_.getTakeManager().takes())
+    {
+        TakeEntry entry;
+        entry.path         = tm.path.string();
+        entry.sampleRate   = tm.sampleRate;
+        entry.numChannels  = tm.numChannels;
+        entry.isoTimestamp = tm.isoTimestamp;
+        sessionData_.takes.push_back(std::move(entry));
+    }
+    sessionData_.dirty = false;
+
+    const bool ok = SessionDocument::save(path, sessionData_);
+    if (ok) SessionDocument::saveRecovery(path, sessionData_);
+    return ok;
+}
+
+bool AudioEngine::loadSession(const std::filesystem::path& path)
+{
+    SessionData data;
+    if (!SessionDocument::load(path, data)) return false;
+    if (!SessionDocument::migrate(data))    return false;
+
+    sessionData_ = std::move(data);
+    return true;
 }
 
 } // namespace ssbb

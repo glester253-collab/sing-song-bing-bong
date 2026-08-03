@@ -2,13 +2,14 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "AudioEngine.h"
 #include "VocalTrack.h"
+#include "CommandHistory.h"
 
 namespace ssbb {
 
 /// MainComponent
 /// Hosts the JUCE AudioDeviceSelectorComponent plus a transport control row,
-/// a vocal-track recording row, and a one-line info label updated at 20 Hz
-/// via a JUCE Timer.
+/// a vocal-track recording row, a playback row, a session row, and a one-line
+/// info label updated at 20 Hz via a JUCE Timer.
 ///
 /// All UI interactions call Transport / Metronome / VocalTrack setters on the
 /// message thread — never from inside the audio callback.
@@ -25,7 +26,8 @@ private:
     void timerCallback() override;
     void updateInfoLabel();
 
-    AudioEngine& engine_;
+    AudioEngine&   engine_;
+    CommandHistory commandHistory_;
 
     // Device selector (must be initialised in the member-initialiser list
     // because AudioDeviceSelectorComponent has no default constructor).
@@ -46,6 +48,15 @@ private:
     juce::ToggleButton armButton_     { "Arm" };
     juce::ToggleButton monitorButton_ { "Monitor" };
     juce::TextButton   recordButton_  { "Record" };
+
+    // Playback controls
+    juce::TextButton   playTakeButton_ { "Play Take" };
+
+    // Session controls
+    juce::TextButton   saveButton_ { "Save..." };
+    juce::TextButton   loadButton_ { "Load..." };
+    juce::TextButton   undoButton_ { "Undo" };
+    juce::TextButton   redoButton_ { "Redo" };
 
     // Status bar
     juce::Label infoLabel_;

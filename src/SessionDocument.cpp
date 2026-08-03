@@ -327,4 +327,16 @@ bool SessionDocument::loadRecovery(const std::filesystem::path& sessionPath,
     return readJsonFromFile(recoveryPath(sessionPath), data);
 }
 
+bool SessionDocument::migrate(SessionData& data) noexcept
+{
+    // Version 1 is the only known schema; nothing to migrate.
+    // If a future version is introduced, add conversion steps here and bump
+    // kSchemaVersion accordingly.
+    if (data.version == kSchemaVersion)
+        return true;
+
+    // Unknown version — cannot safely migrate.
+    return false;
+}
+
 } // namespace ssbb
