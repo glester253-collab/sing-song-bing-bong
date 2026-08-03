@@ -378,188 +378,337 @@ int main()
         expect(!std::filesystem::exists(sessionPath.string() + ".bak"),
                "SessionDocument: successful replacement removes backup", success);
 
-        // Paths with special characters (backslash / ã»h‘éì¶»§q«^wÛ‘]HÜXÚX[ÂˆÜXÚX[™\œÚ[ÛˆHNÂˆÜØ˜•ZÙQ[HİNÂˆİKœ]H
-\œ]ÈZÙWİÚ]Ü][İW‹Ø]ˆŠKœİš[™Ê
-NÂˆİKœØ[\T˜]HHŒÂˆİK›[PÚ[›™[ÈHNÂˆİKš\ÛÕ[Y\İ[\HŒŒŒÌM•ŒÂˆÜXÚX[ZÙ\Ëœ\ÚØ˜XÚÊİJNÂ‚ˆÛÛœİ]]ÈÜXÚX[]H\ÈœÜXÚX[šœÛÛˆÂˆÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[œØ]™JÜXÚX[]ÜXÚX[
-NÂ‚ˆÜØ˜”Ù\ÜÚ[Û‘]HØYYÜXÚX[ÂˆÛÛœİ›ÛÛÚÔÜXÚX[HÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[›ØY
-ÜXÚX[]ØYYÜXÚX[
-NÂˆ^Xİ
-ÚÔÜXÚX[ˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆØY
+        // Paths with special characters (backslash / forward slash mix).
+        // On Linux paths are always '/'-separated; verify escaping does not corrupt.
+        {
+            ssbb::SessionData special;
+            special.version = 1;
+            ssbb::TakeEntry ste;
+            ste.path         = (tmp.path / "take_with_quote\".wav").string();
+            ste.sampleRate   = 48000.0;
+            ste.numChannels  = 1;
+            ste.isoTimestamp = "20260716T060000";
+            special.takes.push_back(ste);
 
-HÚ]][İH[ˆ]™]\›œÈYH‹İXØÙ\ÜÊNÂˆYˆ
-ÚÔÜXÚX[	‰ˆ[ØYYÜXÚX[ZÙ\Ë™[\J
-JBˆ^Xİ
-ØYYÜXÚX[ZÙ\ÖÌKœ]OHİKœ]ˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ]Ú]][İHÚ\˜Xİ\ˆ›İ[™]š\È‹İXØÙ\ÜÊNÂˆB‚ˆËÈ[\HÙ\ÜÚ[Ûˆ›İ[™]š\ˆÂˆÜØ˜”Ù\ÜÚ[Û‘]H[\NÂˆ[\K™\œÚ[ÛˆHNÂˆÛÛœİ]]È[\T]H\È™[\KšœÛÛˆÂˆÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[œØ]™J[\T][\JNÂ‚ˆÜØ˜”Ù\ÜÚ[Û‘]HØYY[\NÂˆÛÛœİ›ÛÛÚÑ[\HHÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[›ØY
-[\T]ØYY[\JNÂˆ^Xİ
-ÚÑ[\Kˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ[\HÙ\ÜÚ[ÛˆØYÈÚ]İ]\œ›Üˆ‹İXØÙ\ÜÊNÂˆ^Xİ
-ØYY[\KZÙ\Ë™[\J
-Kˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ[\HZÙ\È\œ˜^H›İ[™]š\È‹İXØÙ\ÜÊNÂˆ^Xİ
-ØYY[\K˜Û\Ë™[\J
-Kˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ[\HÛ\È\œ˜^H›İ[™]š\È‹İXØÙ\ÜÊNÂˆBˆB‚ˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆËÈ‹ˆÙ\ÜÚ[Û‘Øİ[Y[8 %Ø]™T™XÛİ™\HÈØY™XÛİ™\BˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆ[\\ˆ\
-œÜØ˜—İ\İÜ™XÛİ™\HŠNÂˆÛÛœİ]]ÈÙ\ÜÚ[Û”]H\ÈœÙ\ÜÚ[Û‹šœÛÛˆÂ‚ˆÜØ˜”Ù\ÜÚ[Û‘]HÜšYÎÂˆÜšYË™\œÚ[ÛˆHNÂˆÜØ˜•ZÙQ[HNÂˆKœ]H
-\œ]Èœ™XÛİ™\WİZÙKØ]ˆŠKœİš[™Ê
-NÂˆKœØ[\T˜]HHLŒÂˆK›[PÚ[›™[ÈHNÂˆKš\ÛÕ[Y\İ[\HŒŒŒÌM•MMÂˆÜšYËZÙ\Ëœ\ÚØ˜XÚÊJNÂ‚ˆËÈØ]™H›İXZ[ˆ[™™XÛİ™\K‚ˆÛÛœİ›ÛÛØ]™YXZ[ˆHÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[œØ]™JÙ\ÜÚ[Û”]ÜšYÊNÂˆÛÛœİ›ÛÛØ]™Y™XÛİ™\HHÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[œØ]™T™XÛİ™\JÙ\ÜÚ[Û”]ÜšYÊNÂˆ^Xİ
-Ø]™YXZ[‹”Ù\ÜÚ[Û‘Øİ[Y[ˆØ]™T™XÛİ™\H8 %XZ[ˆØ]™HÚÈ‹İXØÙ\ÜÊNÂˆ^Xİ
-Ø]™Y™XÛİ™\K”Ù\ÜÚ[Û‘Øİ[Y[ˆØ]™T™XÛİ™\J
-H™]\›œÈYH‹İXØÙ\ÜÊNÂ‚ˆËÈ™XÛİ™\Hš[H]\İ^\İ[Û™ÜÚYHHXZ[ˆš[K‚ˆÛÛœİ]]È™XÛİ™\Qš[HH\ÈœÙ\ÜÚ[Û‹œ™XÛİ™\KšœÛÛˆÂˆ^Xİ
-İ™š[\Ş\İ[N™^\İÊ™XÛİ™\Qš[JKˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ™XÛİ™\Hš[H^\İÈÛˆ\ÚÈ‹İXØÙ\ÜÊNÂ‚ˆËÈØY™XÛİ™\H[™™\šYH]X]Ú\Ë‚ˆÜØ˜”Ù\ÜÚ[Û‘]H™XÛİ™\™YÂˆÛÛœİ›ÛÛÚÈHÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[›ØY™XÛİ™\JÙ\ÜÚ[Û”]™XÛİ™\™Y
-NÂˆ^Xİ
-ÚËˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆØY™XÛİ™\J
-H™]\›œÈYH‹İXØÙ\ÜÊNÂˆ^Xİ
-™XÛİ™\™Y™\œÚ[ÛˆOHKˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ™XÛİ™\™Y™\œÚ[ÛˆOHH‹İXØÙ\ÜÊNÂˆ^Xİ
-™XÛİ™\™YZÙ\ËœÚ^™J
-HOHKˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ™XÛİ™\™YZÙ\ËœÚ^™J
-HOHH‹İXØÙ\ÜÊNÂˆYˆ
-\™XÛİ™\™YZÙ\Ë™[\J
-JBˆ^Xİ
-™XÛİ™\™YZÙ\ÖÌKœ]OHKœ]ˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆ™XÛİ™\™YZÙH]X]Ú\È‹İXØÙ\ÜÊNÂ‚ˆËÈØY™XÛİ™\H]\İ˜Z[Ü˜XÙY[HYˆH™XÛİ™\Hš[H\ÈXœÙ[‚ˆ[\\ˆ\ŠœÜØ˜—İ\İÜ™XÛİ™\WØXœÙ[ŠNÂˆÛÛœİ]]ÈZ\ÜÚ[™ÈH\ˆÈ››Û™^\İ[šœÛÛˆÂˆÜØ˜”Ù\ÜÚ[Û‘]H[[^NÂˆÛÛœİ›ÛÛ]\İ˜Z[HÜØ˜”Ù\ÜÚ[Û‘Øİ[Y[›ØY™XÛİ™\JZ\ÜÚ[™Ë[[^JNÂˆ^Xİ
-[]\İ˜Z[ˆ”Ù\ÜÚ[Û‘Øİ[Y[ˆØY™XÛİ™\J
-H™]\›œÈ˜[ÙHÚ[ˆš[HXœÙ[‹ˆİXØÙ\ÜÊNÂˆB‚ˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆËÈKˆØ]™Y›Ü›PØXÚH8 %[š]X[İ]BˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆÜØ˜•Ø]™Y›Ü›PØXÚHØÎÂ‚ˆ^Xİ
-]ØËš\Ô™XYJ
-Kˆ•Ø]™Y›Ü›PØXÚNˆ\Ô™XYJ
-Hİ\È˜[ÙH‹İXØÙ\ÜÊNÂˆ^Xİ
-ØË™Ù]œ˜[Y\Ê
-K™[\J
-Kˆ•Ø]™Y›Ü›PØXÚNˆÙ]œ˜[Y\Ê
-Hİ\È[\H‹İXØÙ\ÜÊNÂ‚ˆËÈ™\šYHHœ˜[YHİXİ\ÈHØİ[Y[YšY[Ë‚ˆÜØ˜•Ø]™Y›Ü›PØXÚN‘œ˜[YHßNÂˆ‹œXZÔÜÈHYÂˆ‹œXZÓ™YÈHLYÂˆ‹œ›\ÈH™Âˆ^Xİ
-‹œXZÔÜÈOHY‹•Ø]™Y›Ü›PØXÚN‘œ˜[YNˆXZÔÜÈšY[XØÙ\ÜÚX›H‹İXØÙ\ÜÊNÂˆ^Xİ
-‹œXZÓ™YÈOHLY‹•Ø]™Y›Ü›PØXÚN‘œ˜[YNˆXZÓ™YÈšY[XØÙ\ÜÚX›H‹İXØÙ\ÜÊNÂˆ^Xİ
-‹œ›\ÈOH™‹•Ø]™Y›Ü›PØXÚN‘œ˜[YNˆ›\ÈšY[XØÙ\ÜÚX›H‹İXØÙ\ÜÊNÂ‚ˆËÈ™\Ù]
+            const auto specialPath = tmp / "special.json";
+            ssbb::SessionDocument::save(specialPath, special);
 
-HÙY\ÈHØXÚH[ˆH›İ\™XYHİ]K‚ˆØËœ™\Ù]
+            ssbb::SessionData loadedSpecial;
+            const bool okSpecial = ssbb::SessionDocument::load(specialPath, loadedSpecial);
+            expect(okSpecial,
+                   "SessionDocument: load() with quote in path returns true", success);
+            if (okSpecial && !loadedSpecial.takes.empty())
+                expect(loadedSpecial.takes[0].path == ste.path,
+                       "SessionDocument: path with quote character round-trips", success);
+        }
 
-NÂˆ^Xİ
-]ØËš\Ô™XYJ
-Kˆ•Ø]™Y›Ü›PØXÚNˆ\Ô™XYJ
-Hİ[˜[ÙHY\ˆ™\Ù]
+        // Empty session round-trip
+        {
+            ssbb::SessionData empty;
+            empty.version = 1;
+            const auto emptyPath = tmp / "empty.json";
+            ssbb::SessionDocument::save(emptyPath, empty);
 
-H‹İXØÙ\ÜÊNÂ‚ˆËÈZ[œ›ÛQš[HÛˆH›Û‹Y^\İ[]]\İ›İÜ˜\Ú[™]\İX]™BˆËÈ\Ô™XYJ
-H˜[ÙK‚ˆØË˜Z[œ›ÛQš[J‹Û›Û™^\İ[Ü]İZÙKØ]ˆ‹MŠNÂˆ^Xİ
-]ØËš\Ô™XYJ
-Kˆ•Ø]™Y›Ü›PØXÚNˆ\Ô™XYJ
-H˜[ÙHY\ˆZ[œ›ÛQš[HÛˆZ\ÜÚ[™È]‹ˆİXØÙ\ÜÊNÂˆB‚ˆËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOBˆËÈ‹ˆ^X˜XÚĞY™™\ˆHØY[™™[™\ˆHÛÛ\]YZÙBˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆ[\\ˆ\
-œÜØ˜—İ\İÜ^X˜XÚÈŠNÂˆÛÛœİ]]È]H\ÈZÙKØ]ˆÂ‚ˆÜØ˜•Ø]•Üš]\ˆÜš]\Âˆ^Xİ
-Üš]\‹›Ü[Š]ŒJKˆ”^X˜XÚĞY™™\ˆ\İĞUˆÜ[œÈ‹İXØÙ\ÜÊNÂˆÛÛœİ›Ø]Ûİ\˜ÙVÍHHÈŒY‹LŒ™‹ŒÙ‹LˆNÂˆÜš]\‹Üš]JÛİ\˜ÙK
-NÂˆÜš]\‹˜ÛÜÙJ
-NÂ‚ˆÜØ˜”^X˜XÚĞY™™\ˆ^X˜XÚÎÂˆ^Xİ
-^X˜XÚË›ØY
-]
-K”^X˜XÚĞY™™\ˆØYÈ™XÛÜ™Y›Ø]ĞUˆ‹İXØÙ\ÜÊNÂˆ^Xİ
-^X˜XÚËš\Ô™XYJ
-K”^X˜XÚĞY™™\ˆ™XYHY\ˆØY‹İXØÙ\ÜÊNÂˆ^Xİ
-^X˜XÚË›[Qœ˜[Y\Ê
-HOH”^X˜XÚĞY™™\ˆœ˜[YHÛİ[‹İXØÙ\ÜÊNÂ‚ˆ›Ø]YÍHHßNÂˆ›Ø]šYÚÍHHßNÂˆ›Ø]
-ˆİ]]ÖÌ—HHÈYšYÚNÂˆ^X˜XÚËœ™[™\Šİ]]Ë‹Œ
-NÂˆ›Üˆ
-[HHÈHÈ
-ÊÚJBˆÂˆ^Xİ
-YÚWHOHÛİ\˜ÙVÚWK”^X˜XÚĞY™™\ˆYØ[\HX]Ú\È‹İXØÙ\ÜÊNÂˆ^Xİ
-šYÚÚWHOHÛİ\˜ÙVÚWK”^X˜XÚĞY™™\ˆ[Û›È\XØ]\ÈÈšYÚ‹İXØÙ\ÜÊNÂˆB‚ˆ›Ø]Y]YÍ×HHßNÂˆ›Ø]
-ˆY]Yİ]ÌWHHÈY]YNÂˆ^X˜XÚËœ™[™\Û\
-Y]Yİ]KËŒˆÊ˜Û\Ù™œÙ]Ø[\\ÏJ‹Ì‹ˆÊš[Tİ\Ø[\\ÏJ‹ÌKˆÊš[Q[™Ø[\\ÏJ‹ÌJNÂˆ^Xİ
-Y]YÌHOHŒˆ	‰ˆY]YÌWHOHŒ‹ˆ”^X˜XÚĞY™™\ˆ[İ™YÛ\\ÈÚ[[™Y›Ü™H]ÈÙ™œÙ]‹İXØÙ\ÜÊNÂˆ^Xİ
-Y]YÌ—HOHÛİ\˜ÙVÌWH	‰ˆY]YÌ×HOHÛİ\˜ÙVÌ—Kˆ”^X˜XÚĞY™™\ˆš[H[™[İ™H\™H›Û‹Y\İXİ]™H‹İXØÙ\ÜÊNÂˆ^Xİ
-Y]YÍHOHŒˆ	‰ˆY]YÍ—HOHŒ‹ˆ”^X˜XÚĞY™™\ˆš[[YYÛ\[™È]Y]Y›İ[™\H‹İXØÙ\ÜÊNÂ‚ˆ›Ø]Z\ÛX]ÚÍHHßNÂˆ›Ø]
-ˆZ\ÛX]Úİ]ÌWHHÈZ\ÛX]ÚNÂˆ^X˜XÚËœ™[™\ŠZ\ÛX]Úİ]KLŒ
-NÂˆ^Xİ
-Z\ÛX]ÚÌHOHŒˆ	‰ˆZ\ÛX]ÚÌ×HOHŒ‹ˆ”^X˜XÚĞY™™\ˆØ[\K\˜]HZ\ÛX]Ú˜Z[ÈÚ[[‹İXØÙ\ÜÊNÂˆB‚ˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆËÈËˆ›ØØ[˜XÚÈHÛÛ\]Y™XÛÜ™[™È™XÛÛY\È^XX›BˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆ[\\ˆ\
-œÜØ˜—İ\İİ›ØØ[Ü^X˜XÚÈŠNÂˆ]]È˜XÚÈHİ›XZÙWİ[š\]YOÜØ˜•›ØØ[˜XÚÏŠ
-NÂˆ˜XÚËOœ™\\™JLŒ
-NÂˆ˜XÚËOœÙ]ZÙQ\™XİÜJ\œ]
-NÂˆ˜XÚËO˜\›J
-NÂˆ˜XÚËOœİ\™XÛÜ™[™Ê
-NÂ‚ˆÛÛœİ›Ø][œ]ÍHHÈŒY‹Y‹LŒY‹LYˆNÂˆÛÛœİ›Ø]
-ˆ[œ]ÖÌWHHÈ[œ]NÂˆ›Ø][Ûš]Ü–ÍHHßNÂˆ›Ø]
-ˆ[Ûš]Ü“İ]]ÖÌWHHÈ[Ûš]ÜˆNÂˆ˜XÚËOœ›ØÙ\ÜĞ›ØÚÊ[œ]ËK[Ûš]Ü“İ]]ËK˜[ÙJNÂˆ˜XÚËOœİÜ™XÛÜ™[™Ê
-NÂˆ˜XÚËO™˜Z[•Ñš[J
-NÂ‚ˆ^Xİ
-˜XÚËO™Ù]İ]J
-HOHÜØ˜•›ØØ[˜XÚÎ”İ]N’YKˆ•›ØØ[˜XÚÎˆ™]\›œÈÈYHY\ˆ˜Z[ˆ‹İXØÙ\ÜÊNÂˆ^Xİ
-˜XÚËOš\Ô^X˜XÚÊ
-Kˆ•›ØØ[˜XÚÎˆÛÛ\]YZÙH\È]˜Z[X›H›Üˆ^X˜XÚÈ‹İXØÙ\ÜÊNÂ‚ˆ›Ø]^X˜XÚÓİ]ÍHHßNÂˆ›Ø]
-ˆ^X˜XÚÓİ]]ÖÌWHHÈ^X˜XÚÓİ]NÂˆ˜XÚËOœ›ØÙ\ÜĞ›ØÚÊ[‹^X˜XÚÓİ]]ËKYJNÂˆ›Üˆ
-[HHÈHÈ
-ÊÚJBˆ^Xİ
-^X˜XÚÓİ]ÚWHOH[œ]ÚWKˆ•›ØØ[˜XÚÎˆ]\İZÙH^\Èœ›ÛH˜[œÜÜ™\›È‹İXØÙ\ÜÊNÂˆB‚ˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆËÈˆ›ØØ[˜XÚÈHš[K[Ü[ˆ˜Z[\™H™]™\ˆ[\œÈ™XÛÜ™[™ÂˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆ[\\ˆ\
-œÜØ˜—İ\İÜ™XÛÜ™ÛÜ[—Ù˜Z[\™HŠNÂˆÛÛœİ]]È›ØÚÙ\ˆH\È››İØWÙ\™XİÜHÂˆÂˆİ›Ùœİ™X[Hš[J›ØÚÙ\ŠNÂˆš[H˜›ØÚÈ\™XİÜHÜ™X][ÛˆÂˆB‚ˆ]]È˜XÚÈHİ›XZÙWİ[š\]YOÜØ˜•›ØØ[˜XÚÏŠ
-NÂˆ˜XÚËOœ™\\™JLŒ
-NÂˆ˜XÚËOœÙ]ZÙQ\™XİÜJ›ØÚÙ\ŠNÂˆ˜XÚËO˜\›J
-NÂˆ˜XÚËOœİ\™XÛÜ™[™Ê
-NÂ‚ˆ^Xİ
-˜XÚËO™Ù]İ]J
-HOHÜØ˜•›ØØ[˜XÚÎ”İ]N\›YYˆ•›ØØ[˜XÚÎˆ˜Z[Yš[HÜ[ˆX]™\È˜XÚÈ\›YY‹İXØÙ\ÜÊNÂˆ^Xİ
-˜XÚËOš\Ô™XÛÜ™[™Ñ\œ›ÜŠ
-Kˆ•›ØØ[˜XÚÎˆ˜Z[Yš[HÜ[ˆ^ÜÙ\È[ˆ\œ›Üˆ‹İXØÙ\ÜÊNÂˆ^Xİ
-˜XÚËO™Ù]ZÙSX[˜YÙ\Š
-KZÙ\Ê
-K™[\J
-Kˆ•›ØØ[˜XÚÎˆ˜Z[Yš[HÜ[ˆ\È›İİÜ™Y\ÈHZÙH‹İXØÙ\ÜÊNÂˆB‚ˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆËÈKˆÓLMˆ[\Ü[™›Ø]ĞUˆ^ÜˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆ[\\ˆ\
-œÜØ˜—İ\İÜÛWÚ[\ÜÙ^ÜŠNÂˆÛÛœİ]]È[œ]]H\Èš[œ]M‹Ø]ˆÂˆÛÛœİİ˜\œ˜^O[M—İˆÛHÈMŒÎLMŒÎÌÍÈNÂˆ^Xİ
-Üš]TÛLM•Ø]Š[œ]]ÛJKˆ”^X˜XÚĞY™™\ˆÓLMˆš^\™HÜš][ˆ‹İXØÙ\ÜÊNÂ‚ˆÜØ˜”^X˜XÚĞY™™\ˆ^X˜XÚÎÂˆ^Xİ
-^X˜XÚË›ØY
-[œ]]
-Kˆ”^X˜XÚĞY™™\ˆØYÈÓLMˆĞUˆ‹İXØÙ\ÜÊNÂˆ›Ø]İ]]ÍHHßNÂˆ›Ø]
-ˆÚ[›™[ÖÌWHHÈİ]]NÂˆ^X˜XÚËœ™[™\ŠÚ[›™[ËKLŒ
-NÂˆ^Xİ
-İ˜XœÊİ]]ÌWHHYŠHŒY‹ˆ”^X˜XÚĞY™™\ˆÓLMˆÜÚ]]™HØ[\HÛÛ™\È‹İXØÙ\ÜÊNÂˆ^Xİ
-İ˜XœÊİ]]Ì—H
-ÈYŠHŒY‹ˆ”^X˜XÚĞY™™\ˆÓLMˆ™YØ]]™HØ[\HÛÛ™\È‹İXØÙ\ÜÊNÂ‚ˆÛÛœİ]]È^Ü]H\È™^ÜØ]ˆÂˆ^Xİ
-^X˜XÚË™^ÜÊ^Ü]
-Kˆ”^X˜XÚĞY™™\ˆ^ÜÈİ\œ™[]Y[È‹İXØÙ\ÜÊNÂˆÜØ˜”^X˜XÚĞY™™\ˆ^ÜYÂˆ^Xİ
-^ÜY›ØY
-^Ü]
-Kˆ”^X˜XÚĞY™™\ˆ^ÜYĞUˆ™[ØYÈ‹İXØÙ\ÜÊNÂˆ^Xİ
-^ÜY›[Qœ˜[Y\Ê
-HOHˆ”^X˜XÚĞY™™\ˆ^ÜYœ˜[YHÛİ[‹İXØÙ\ÜÊNÂˆB‚ˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆËÈLˆÛÜšÙ\ˆ[\ÜØ]™Y›Ü›K]]ÜØ]™K^Ü[™™XÛİ™\BˆËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKBˆÂˆ[\\ˆ\
-œÜØ˜—İ\İİÛÜšÙ\—Ú›ØœÈŠNÂˆÛÛœİ]]ÈÛİ\˜ÙT]H\È›İÛ™YØ]ˆÂˆÜØ˜•Ø]•Üš]\ˆÜš]\Âˆ^Xİ
-Üš]\‹›Ü[ŠÛİ\˜ÙT]LŒJKˆ•ÛÜšÙ\ˆ›ØœÎˆÛİ\˜ÙHÜ[œÈ‹İXØÙ\ÜÊNÂˆİ˜\œ˜^O›Ø]LLˆØ[\\ÈßNÂˆ›Üˆ
-İœÚ^™WİHHÈHØ[\\ËœÚ^™J
-NÈ
-ÊÚJBˆØ[\\ÖÚWHH
-H	HˆOH
-HÈŒYˆˆLŒYÂˆ^Xİ
-Üš]\‹Üš]JØ[\\Ë™]J
-Kİ]X×ØØ\İ[ŠØ[\\ËœÚ^™J
-JJKˆ•ÛÜšÙ\ˆ›ØœÎˆÛİ\˜ÙHÜš]\È‹İXØÙ\ÜÊNÂˆÜš]\‹˜ÛÜÙJ
-NÂ‚ˆ]]È˜XÚÈHİ›XZÙWİ[š\]YOÜØ˜•›ØØ[˜XÚÏŠ
-NÂˆ˜XÚËOœ™\\™JLŒ
-NÂˆ˜XÚËOœÙ]ZÙQ\™XİÜJ\œ]
-NÂˆ˜XÚËOœ™\]Y\İ[\Ü
-Ûİ\˜ÙT]
-NÂˆ˜XÚËOœÙ\šXÙUÛÜšÙ\•\ÚÜÊ
-NÂˆ^Xİ
-˜XÚËO™Ù]ÛÜšÙ\”İ]\Ê
-HOHÜØ˜•›ØØ[˜XÚÎ•ÛÜšÙ\”İ]\Î’[\ÜİXØÙYYYˆ•ÛÜšÙ\ˆ›ØœÎˆ[\ÜİXØÙYYÈ‹İXØÙ\ÜÊNÂˆ^Xİ
-˜XÚËOš\Ô^X˜XÚÊ
-K•ÛÜšÙ\ˆ›ØœÎˆ[\Ü™XÛÛY\È^XX›H‹İXØÙ\ÜÊNÂ‚ˆİ™XİÜÜØ˜•Ø]™Y›Ü›PØXÚN‘œ˜[YOˆØ]™Y›Ü›NÂˆZ[İÙ[™\˜][ÛˆHÂˆ^Xİ
-˜XÚËO˜ÛÜUØ]™Y›Ü›RYÚ[™ÙY
-Ø]™Y›Ü›KÙ[™\˜][ÛŠKˆ•ÛÜšÙ\ˆ›ØœÎˆØ]™Y›Ü›HÛ˜\ÚİX›\ÚY‹İXØÙ\ÜÊNÂˆ^Xİ
-]Ø]™Y›Ü›K™[\J
-K•ÛÜšÙ\ˆ›ØœÎˆØ]™Y›Ü›HÛÛZ[œÈœ˜[Y\È‹İXØÙ\ÜÊNÂ‚ˆ˜XÚËOœÙ]Û\Ù™œÙ]Ø[\\ÊÌŠNÂˆ˜XÚËOœÙ]š[Tİ\Ø[\\ÊJNÂˆ˜XÚËOœÙ]š[Q[™Ø[\\ÊÊNÂˆ˜XÚËOœÙ\šXÙUÛÜšÙ\•\ÚÜÊ
-NÂˆ^Xİ
-˜XÚËO™Ù]ÛÜšÙ\”İ]\Ê
-HOHÜØ˜•›ØØ[˜XÚÎ•ÛÜšÙ\”İ]\Î]]ÜØ]™TİXØÙYYYˆ•ÛÜšÙ\ˆ›ØœÎˆY™\œ™Y]]ÜØ]™HİXØÙYYÈ‹İXØÙ\ÜÊNÂˆ^Xİ
-˜XÚËOœ™XÛİ™\P]˜Z[X›J
-Kˆ•ÛÜšÙ\ˆ›ØœÎˆ™XÛİ™\HY]Y]H^\İÈ‹İXØÙ\ÜÊNÂ‚ˆÛÛœİ]]È^Ü]H\ÈÛÜšÙ\‹Y^ÜØ]ˆÂˆ˜XÚËOœ™\]Y\İ^Ü
-^Ü]
-NÂˆ˜XÚËOœÙ\šXÙUÛÜšÙ\•\ÚÜÊ
-NÂˆ^Xİ
-˜XÚËO™Ù]ÛÜšÙ\”İ]\Ê
-HOHÜØ˜•›ØØ[˜XÚÎ•ÛÜšÙ\”İ]\Î‘^ÜİXØÙYYYˆ•ÛÜšÙ\ˆ›ØœÎˆ^ÜİXØÙYYÈ‹İXØÙ\ÜÊNÂˆ^Xİ
-İ™š[\Ş\İ[N™^\İÊ^Ü]
-Kˆ•ÛÜšÙ\ˆ›ØœÎˆ^Üš[H^\İÈ‹İXØÙ\ÜÊNÂ‚ˆ]]È™XÛİ™\™YHİ›XZÙWİ[š\]YOÜØ˜•›ØØ[˜XÚÏŠ
-NÂˆ™XÛİ™\™YOœ™\\™JLŒ
-NÂˆ™XÛİ™\™YOœÙ]ZÙQ\™XİÜJ\œ]
-NÂˆ™XÛİ™\™YOœ™\]Y\İ™XÛİ™\SØY
+            ssbb::SessionData loadedEmpty;
+            const bool okEmpty = ssbb::SessionDocument::load(emptyPath, loadedEmpty);
+            expect(okEmpty,
+                   "SessionDocument: empty session loads without error", success);
+            expect(loadedEmpty.takes.empty(),
+                   "SessionDocument: empty takes array round-trips", success);
+            expect(loadedEmpty.clips.empty(),
+                   "SessionDocument: empty clips array round-trips", success);
+        }
+    }
 
-NÂˆ™XÛİ™\™YOœÙ\šXÙUÛÜšÙ\•\ÚÜÊ
-NÂˆ^Xİ
-™XÛİ™\™YO™Ù]ÛÜšÙ\”İ]\Ê
-HOBˆÜØ˜•›ØØ[˜XÚÎ•ÛÜšÙ\”İ]\Î”™XÛİ™\TİXØÙYYYˆ•ÛÜšÙ\ˆ›ØœÎˆ™XÛİ™\HİXØÙYYÈ‹İXØÙ\ÜÊNÂˆ^Xİ
-™XÛİ™\™YOš\Ô^X˜XÚÊ
-Kˆ•ÛÜšÙ\ˆ›ØœÎˆ™XÛİ™\™YÛİ\˜ÙH\È^XX›H‹İXØÙ\ÜÊNÂˆ^Xİ
-™XÛİ™\™YO™Ù]Û\Ù™œÙ]Ø[\\Ê
-HOHÌˆ	‰‚ˆ™XÛİ™\™YO™Ù]š[Tİ\Ø[\\Ê
-HOHH	‰‚ˆ™XÛİ™\™YO™Ù]š[Q[™Ø[\\Ê
-HOHËˆ•ÛÜšÙ\ˆ›ØœÎˆ™XÛİ™\H™\İÜ™\È›Û‹Y\İXİ]™HY]È‹İXØÙ\ÜÊNÂˆB‚ˆËÈOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOBˆYˆ
-İXØÙ\ÜÊBˆİ˜Ûİ][›ØØ[˜XÚÈ\İÈ\ÜÙY—ˆÂˆ[ÙBˆİ˜Ù\œˆ“Û™HÜˆ[Ü™H›ØØ[˜XÚÈ\İÈRSQ—ˆÂ‚ˆ™]\›ˆİXØÙ\ÜÈÈˆNÂŸB
+    // -------------------------------------------------------------------------
+    // 4b. SessionDocument â€” saveRecovery / loadRecovery
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_recovery");
+        const auto sessionPath = tmp / "session.json";
+
+        ssbb::SessionData orig;
+        orig.version = 1;
+        ssbb::TakeEntry te;
+        te.path         = (tmp.path / "recovery_take.wav").string();
+        te.sampleRate   = 44100.0;
+        te.numChannels  = 1;
+        te.isoTimestamp = "20260716T055400";
+        orig.takes.push_back(te);
+
+        // Save both main and recovery.
+        const bool savedMain     = ssbb::SessionDocument::save(sessionPath, orig);
+        const bool savedRecovery = ssbb::SessionDocument::saveRecovery(sessionPath, orig);
+        expect(savedMain,     "SessionDocument: saveRecovery â€” main save ok",     success);
+        expect(savedRecovery, "SessionDocument: saveRecovery() returns true",     success);
+
+        // Recovery file must exist alongside the main file.
+        const auto recoveryFile = tmp / "session.recovery.json";
+        expect(std::filesystem::exists(recoveryFile),
+               "SessionDocument: recovery file exists on disk", success);
+
+        // Load recovery and verify it matches.
+        ssbb::SessionData recovered;
+        const bool ok = ssbb::SessionDocument::loadRecovery(sessionPath, recovered);
+        expect(ok,
+               "SessionDocument: loadRecovery() returns true", success);
+        expect(recovered.version == 1,
+               "SessionDocument: recovered version == 1", success);
+        expect(recovered.takes.size() == 1,
+               "SessionDocument: recovered takes.size() == 1", success);
+        if (!recovered.takes.empty())
+            expect(recovered.takes[0].path == te.path,
+                   "SessionDocument: recovered take path matches", success);
+
+        // loadRecovery must fail gracefully if the recovery file is absent.
+        TempDir tmp2("ssbb_test_recovery_absent");
+        const auto missing = tmp2 / "nonexistent.json";
+        ssbb::SessionData dummy;
+        const bool mustFail = ssbb::SessionDocument::loadRecovery(missing, dummy);
+        expect(!mustFail,
+               "SessionDocument: loadRecovery() returns false when file absent",
+               success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. WaveformCache â€” initial state
+    // -------------------------------------------------------------------------
+    {
+        ssbb::WaveformCache wc;
+
+        expect(!wc.isReady(),
+               "WaveformCache: isReady() starts false", success);
+        expect(wc.getFrames().empty(),
+               "WaveformCache: getFrames() starts empty", success);
+
+        // Verify the Frame struct has the documented fields.
+        ssbb::WaveformCache::Frame f{};
+        f.peakPos = 0.9f;
+        f.peakNeg = -0.9f;
+        f.rms     = 0.6f;
+        expect(f.peakPos == 0.9f,  "WaveformCache::Frame: peakPos field accessible", success);
+        expect(f.peakNeg == -0.9f, "WaveformCache::Frame: peakNeg field accessible", success);
+        expect(f.rms     == 0.6f,  "WaveformCache::Frame: rms field accessible",     success);
+
+        // reset() keeps the cache in the not-ready state.
+        wc.reset();
+        expect(!wc.isReady(),
+               "WaveformCache: isReady() still false after reset()", success);
+
+        // buildFromFile on a non-existent path must not crash and must leave
+        // isReady() false.
+        wc.buildFromFile("/nonexistent/path/take.wav", 256);
+        expect(!wc.isReady(),
+               "WaveformCache: isReady() false after buildFromFile on missing path",
+               success);
+    }
+
+    // =========================================================================
+    // 6. PlaybackBuffer - load and render a completed take
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_playback");
+        const auto path = tmp / "take.wav";
+
+        ssbb::WavWriter writer;
+        expect(writer.open(path, 48000.0, 1),
+               "PlaybackBuffer: test WAV opens", success);
+        const float source[4] = { 0.1f, -0.2f, 0.3f, -0.4f };
+        writer.write(source, 4);
+        writer.close();
+
+        ssbb::PlaybackBuffer playback;
+        expect(playback.load(path), "PlaybackBuffer: loads recorded float WAV", success);
+        expect(playback.isReady(), "PlaybackBuffer: ready after load", success);
+        expect(playback.numFrames() == 4, "PlaybackBuffer: frame count", success);
+
+        float left[4] = {};
+        float right[4] = {};
+        float* outputs[2] = { left, right };
+        playback.render(outputs, 2, 4, 0, 48000.0);
+        for (int i = 0; i < 4; ++i)
+        {
+            expect(left[i] == source[i], "PlaybackBuffer: left sample matches", success);
+            expect(right[i] == source[i], "PlaybackBuffer: mono duplicates to right", success);
+        }
+
+        float edited[7] = {};
+        float* editedOut[1] = { edited };
+        playback.renderClip(editedOut, 1, 7, 0, 48000.0,
+                            /*clipOffsetSamples=*/2,
+                            /*trimStartSamples=*/1,
+                            /*trimEndSamples=*/1);
+        expect(edited[0] == 0.0f && edited[1] == 0.0f,
+               "PlaybackBuffer: moved clip is silent before its offset", success);
+        expect(edited[2] == source[1] && edited[3] == source[2],
+               "PlaybackBuffer: trim and move are non-destructive", success);
+        expect(edited[4] == 0.0f && edited[6] == 0.0f,
+               "PlaybackBuffer: trimmed clip ends at edited boundary", success);
+
+        float mismatch[4] = {};
+        float* mismatchOut[1] = { mismatch };
+        playback.render(mismatchOut, 1, 4, 0, 44100.0);
+        expect(mismatch[0] == 0.0f && mismatch[3] == 0.0f,
+               "PlaybackBuffer: sample-rate mismatch fails silent", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. VocalTrack - completed recording becomes playable
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_vocal_playback");
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(tmp.path);
+        track->arm();
+        track->startRecording();
+
+        const float input[4] = { 0.25f, 0.5f, -0.25f, -0.5f };
+        const float* inputs[1] = { input };
+        float monitor[4] = {};
+        float* monitorOutputs[1] = { monitor };
+        track->processBlock(inputs, 1, monitorOutputs, 1, 4, 0, false);
+        track->stopRecording();
+        track->drainToFile();
+
+        expect(track->getState() == ssbb::VocalTrack::State::Idle,
+               "VocalTrack: returns to Idle after drain", success);
+        expect(track->hasPlayback(),
+               "VocalTrack: completed take is available for playback", success);
+
+        float playbackOut[4] = {};
+        float* playbackOutputs[1] = { playbackOut };
+        track->processBlock(nullptr, 0, playbackOutputs, 1, 4, 0, true);
+        for (int i = 0; i < 4; ++i)
+            expect(playbackOut[i] == input[i],
+                   "VocalTrack: latest take plays from transport zero", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. VocalTrack - file-open failure never enters Recording
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_record_open_failure");
+        const auto blocker = tmp / "not_a_directory";
+        {
+            std::ofstream file(blocker);
+            file << "block directory creation";
+        }
+
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(blocker);
+        track->arm();
+        track->startRecording();
+
+        expect(track->getState() == ssbb::VocalTrack::State::Armed,
+               "VocalTrack: failed file open leaves track Armed", success);
+        expect(track->hasRecordingError(),
+               "VocalTrack: failed file open exposes an error", success);
+        expect(track->getTakeManager().takes().empty(),
+               "VocalTrack: failed file open is not stored as a take", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. PCM16 import and float WAV export
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_pcm_import_export");
+        const auto inputPath = tmp / "input16.wav";
+        const std::array<int16_t, 4> pcm { 0, 16384, -16384, 32767 };
+        expect(writePcm16Wav(inputPath, pcm),
+               "PlaybackBuffer: PCM16 fixture written", success);
+
+        ssbb::PlaybackBuffer playback;
+        expect(playback.load(inputPath),
+               "PlaybackBuffer: loads PCM16 WAV", success);
+        float output[4] = {};
+        float* channels[1] = { output };
+        playback.render(channels, 1, 4, 0, 44100.0);
+        expect(std::abs(output[1] - 0.5f) < 0.0001f,
+               "PlaybackBuffer: PCM16 positive sample converts", success);
+        expect(std::abs(output[2] + 0.5f) < 0.0001f,
+               "PlaybackBuffer: PCM16 negative sample converts", success);
+
+        const auto exportPath = tmp / "export.wav";
+        expect(playback.exportTo(exportPath),
+               "PlaybackBuffer: exports current audio", success);
+        ssbb::PlaybackBuffer exported;
+        expect(exported.load(exportPath),
+               "PlaybackBuffer: exported WAV reloads", success);
+        expect(exported.numFrames() == 4,
+               "PlaybackBuffer: exported frame count", success);
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. Worker import, waveform, autosave, export, and recovery
+    // -------------------------------------------------------------------------
+    {
+        TempDir tmp("ssbb_test_worker_jobs");
+        const auto sourcePath = tmp / "owned.wav";
+        ssbb::WavWriter writer;
+        expect(writer.open(sourcePath, 44100.0, 1),
+               "Worker jobs: source opens", success);
+        std::array<float, 512> samples {};
+        for (std::size_t i = 0; i < samples.size(); ++i)
+            samples[i] = (i % 2 == 0) ? 0.25f : -0.25f;
+        expect(writer.write(samples.data(), static_cast<int>(samples.size())),
+               "Worker jobs: source writes", success);
+        writer.close();
+
+        auto track = std::make_unique<ssbb::VocalTrack>();
+        track->prepare(44100.0, 64);
+        track->setTakeDirectory(tmp.path);
+        track->requestImport(sourcePath);
+        track->serviceWorkerTasks();
+        expect(track->getWorkerStatus() == ssbb::VocalTrack::WorkerStatus::ImportSucceeded,
+               "Worker jobs: import succeeds", success);
+        expect(track->hasPlayback(), "Worker jobs: import becomes playable", success);
+
+        std::vector<ssbb::WaveformCache::Frame> waveform;
+        uint64_t generation = 0;
+        expect(track->copyWaveformIfChanged(waveform, generation),
+               "Worker jobs: waveform snapshot published", success);
+        expect(!waveform.empty(), "Worker jobs: waveform contains frames", success);
+
+        track->setClipOffsetSamples(32);
+        track->setTrimStartSamples(5);
+        track->setTrimEndSamples(7);
+        track->serviceWorkerTasks();
+        expect(track->getWorkerStatus() == ssbb::VocalTrack::WorkerStatus::AutosaveSucceeded,
+               "Worker jobs: deferred autosave succeeds", success);
+        expect(track->recoveryAvailable(),
+               "Worker jobs: recovery metadata exists", success);
+
+        const auto exportPath = tmp / "worker-export.wav";
+        track->requestExport(exportPath);
+        track->serviceWorkerTasks();
+        expect(track->getWorkerStatus() == ssbb::VocalTrack::WorkerStatus::ExportSucceeded,
+               "Worker jobs: export succeeds", success);
+        expect(std::filesystem::exists(exportPath),
+               "Worker jobs: export file exists", success);
+
+        auto recovered = std::make_unique<ssbb::VocalTrack>();
+        recovered->prepare(44100.0, 64);
+        recovered->setTakeDirectory(tmp.path);
+        recovered->requestRecoveryLoad();
+        recovered->serviceWorkerTasks();
+        expect(recovered->getWorkerStatus() ==
+                   ssbb::VocalTrack::WorkerStatus::RecoverySucceeded,
+               "Worker jobs: recovery succeeds", success);
+        expect(recovered->hasPlayback(),
+               "Worker jobs: recovered source is playable", success);
+        expect(recovered->getClipOffsetSamples() == 32 &&
+                   recovered->getTrimStartSamples() == 5 &&
+                   recovered->getTrimEndSamples() == 7,
+               "Worker jobs: recovery restores non-destructive edits", success);
+    }
+
+    // =========================================================================
+    if (success)
+        std::cout << "All vocal track tests passed.\n";
+    else
+        std::cerr << "One or more vocal track tests FAILED.\n";
+
+    return success ? 0 : 1;
+}
